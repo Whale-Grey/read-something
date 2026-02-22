@@ -107,6 +107,10 @@ const CHUNK_SIZE = 512;
 const CHUNK_OVERLAP = 64;
 const CHUNK_STEP = CHUNK_SIZE - CHUNK_OVERLAP;
 const MIN_CHUNK_TEXT_LENGTH = 20;
+const CHUNKING_STRATEGY_SIGNATURE = 'sentence-boundary-v1';
+const CHUNK_SENTENCE_BOUNDARY_BACKWARD_SCAN = 180;
+const CHUNK_SENTENCE_BOUNDARY_FORWARD_SCAN = 120;
+const CHUNK_MIN_LENGTH_GUARD = Math.max(MIN_CHUNK_TEXT_LENGTH, Math.floor(CHUNK_SIZE * 0.35));
 const TOP_K = 5;
 const DEFAULT_PER_BOOK_TOP_K = 2;
 const KEYWORD_BOOST_WEIGHT = 0.08;
@@ -648,6 +652,7 @@ const createChaptersSignature = (chapters: Chapter[]): string => {
   };
 
   const metrics = getPreparedChapterMetrics(chapters);
+  feed(CHUNKING_STRATEGY_SIGNATURE);
   feed(String(metrics.chapters.length));
   for (let i = 0; i < metrics.chapters.length; i++) {
     const title = chapters[i]?.title || '';
@@ -690,6 +695,177 @@ const computeKeywordBoost = (text: string, queryTerms: string[]): number => {
 
 // ─── 文本分块 ───
 
+const SENTENCE_BOUNDARY_PUNCTUATION = new Set([
+  '.',
+  '!',
+  '?',
+  ';',
+  '。',
+  '！',
+  '？',
+  '；',
+  '｡',
+  '．',
+  '﹒',
+  '…',
+  '⋯',
+  '︙',
+]);
+
+const SENTENCE_BOUNDARY_TRAILING_CHARS = new Set([
+  '"',
+  '\'',
+  ')',
+  ']',
+  '}',
+  '）',
+  '】',
+  '」',
+  '』',
+  '》',
+  '〉',
+  '”',
+  '’',
+]);
+
+const isDigitChar = (char: string | undefined): boolean => Boolean(char && char >= '0' && char <= '9');
+
+const isSentenceBoundaryAt = (text: string, index: number): boolean => {
+  if (index < 0 || index >= text.length) return false;
+  const char = text[index];
+  if (char === '\n') return true;
+  if (!SENTENCE_BOUNDARY_PUNCTUATION.has(char)) return false;
+
+  // Keep decimal numbers (e.g. 3.14) from being treated as sentence boundaries.
+  if ((char === '.' || char === '．' || char === '﹒') && isDigitChar(text[index - 1]) && isDigitChar(text[index + 1])) {
+    return false;
+  }
+  return true;
+};
+
+const expandSentenceBoundaryEnd = (text: string, boundaryIndex: number, maxEndExclusive: number): number => {
+  let end = Math.min(maxEndExclusive, boundaryIndex + 1);
+  while (end < maxEndExclusive) {
+    const char = text[end];
+    if (SENTENCE_BOUNDARY_TRAILING_CHARS.has(char)) {
+      end += 1;
+      continue;
+    }
+    if (char === ' ' || char === '\t' || char === '\r') {
+      end += 1;
+      continue;
+    }
+    if (char === '\n') {
+      end += 1;
+      while (end < maxEndExclusive && text[end] === '\n') end += 1;
+      break;
+    }
+    if (SENTENCE_BOUNDARY_PUNCTUATION.has(char)) {
+      end += 1;
+      continue;
+    }
+    break;
+  }
+  return end;
+};
+
+const pickChunkEndBySentenceBoundary = (
+  text: string,
+  chunkStart: number,
+  hardEndExclusive: number,
+  chapterUpperExclusive: number,
+): number => {
+  const hardEnd = clampOffsetWithin(hardEndExclusive, chapterUpperExclusive, hardEndExclusive);
+  const minProtectedEnd = Math.min(chapterUpperExclusive, chunkStart + CHUNK_MIN_LENGTH_GUARD);
+  if (hardEnd <= minProtectedEnd) return hardEnd;
+
+  const forwardScanStart = Math.max(chunkStart, hardEnd - 1);
+  const forwardScanEnd = Math.min(chapterUpperExclusive, hardEnd + CHUNK_SENTENCE_BOUNDARY_FORWARD_SCAN);
+  for (let index = forwardScanStart; index < forwardScanEnd; index += 1) {
+    if (!isSentenceBoundaryAt(text, index)) continue;
+    const candidateEnd = Math.min(
+      chapterUpperExclusive,
+      expandSentenceBoundaryEnd(text, index, chapterUpperExclusive)
+    );
+    if (candidateEnd <= minProtectedEnd) continue;
+    return candidateEnd;
+  }
+
+  const backwardScanStart = Math.min(chapterUpperExclusive - 1, hardEnd - 1);
+  const backwardScanEnd = Math.max(minProtectedEnd - 1, hardEnd - CHUNK_SENTENCE_BOUNDARY_BACKWARD_SCAN);
+  for (let index = backwardScanStart; index >= backwardScanEnd; index -= 1) {
+    if (!isSentenceBoundaryAt(text, index)) continue;
+    const candidateEnd = Math.min(
+      chapterUpperExclusive,
+      expandSentenceBoundaryEnd(text, index, chapterUpperExclusive)
+    );
+    if (candidateEnd <= minProtectedEnd) continue;
+    return candidateEnd;
+  }
+
+  return hardEnd;
+};
+
+interface LocalChunkRange {
+  start: number;
+  end: number;
+}
+
+const buildChapterChunkRanges = (
+  chapterText: string,
+  chapterStartOffset: number,
+  lowerBoundExclusive: number,
+  upperBoundExclusive: number,
+): LocalChunkRange[] => {
+  const chapterLen = chapterText.length;
+  if (chapterLen <= 0) return [];
+
+  const chapterEndOffset = chapterStartOffset + chapterLen;
+  const localUpperExclusive = clampOffsetWithin(upperBoundExclusive - chapterStartOffset, chapterLen, chapterLen);
+  if (localUpperExclusive <= 0) return [];
+
+  const clampedLowerBound = clampOffsetWithin(lowerBoundExclusive, chapterEndOffset, 0);
+  const localLowerExclusive = clampOffsetWithin(clampedLowerBound - chapterStartOffset, localUpperExclusive, 0);
+  const ranges: LocalChunkRange[] = [];
+  let chunkStart = 0;
+
+  while (chunkStart < localUpperExclusive) {
+    const remaining = localUpperExclusive - chunkStart;
+    if (remaining <= MIN_CHUNK_TEXT_LENGTH) {
+      const tailEnd = localUpperExclusive;
+      if (tailEnd > localLowerExclusive) {
+        ranges.push({ start: chunkStart, end: tailEnd });
+      }
+      break;
+    }
+
+    const hardEnd = Math.min(chunkStart + CHUNK_SIZE, localUpperExclusive);
+    let chunkEnd = pickChunkEndBySentenceBoundary(chapterText, chunkStart, hardEnd, localUpperExclusive);
+    chunkEnd = Math.min(localUpperExclusive, chunkEnd);
+    if (chunkEnd - chunkStart < MIN_CHUNK_TEXT_LENGTH) {
+      chunkEnd = Math.min(localUpperExclusive, chunkStart + CHUNK_SIZE);
+    }
+    if (chunkEnd - chunkStart < MIN_CHUNK_TEXT_LENGTH) {
+      chunkEnd = localUpperExclusive;
+    }
+    if (chunkEnd <= chunkStart) break;
+
+    if (chunkEnd > localLowerExclusive) {
+      ranges.push({ start: chunkStart, end: chunkEnd });
+    }
+    if (chunkEnd >= localUpperExclusive) break;
+
+    let nextStart = Math.max(0, chunkEnd - CHUNK_OVERLAP);
+    if (nextStart <= chunkStart) {
+      nextStart = Math.min(localUpperExclusive, chunkStart + Math.max(1, CHUNK_STEP));
+    }
+    if (nextStart <= chunkStart) break;
+    chunkStart = nextStart;
+  }
+
+  return ranges;
+};
+
 export const chunkBookText = (
   bookId: string,
   chapters: Chapter[],
@@ -702,26 +878,21 @@ export const chunkBookText = (
     const rawContent = chapters[ci].content || '';
     const chapterText = sanitizeTextForAiPrompt(rawContent);
     const chapterLen = chapterText.length;
-
-    for (let pos = 0; pos < chapterLen; pos += CHUNK_SIZE - CHUNK_OVERLAP) {
-      const start = globalOffset + pos;
-      if (start >= maxGlobalOffset) break;
-
-      const end = Math.min(globalOffset + pos + CHUNK_SIZE, globalOffset + chapterLen);
-      const effectiveEnd = Math.min(end, maxGlobalOffset);
-      const text = chapterText.slice(pos, pos + (effectiveEnd - start));
-      if (text.length < 20) continue;
-
+    const ranges = buildChapterChunkRanges(chapterText, globalOffset, 0, maxGlobalOffset);
+    for (const range of ranges) {
+      const text = chapterText.slice(range.start, range.end);
+      if (text.length < MIN_CHUNK_TEXT_LENGTH) continue;
       chunks.push({
-        id: `${bookId}_ch${ci}_${pos}`,
+        id: `${bookId}_ch${ci}_${range.start}`,
         bookId,
         chapterIndex: ci,
-        startOffset: start,
-        endOffset: effectiveEnd,
+        startOffset: globalOffset + range.start,
+        endOffset: globalOffset + range.end,
         text,
       });
     }
     globalOffset += chapterLen;
+    if (globalOffset >= maxGlobalOffset) break;
   }
   return chunks;
 };
@@ -743,24 +914,19 @@ const chunkBookTextInRange = (
     const rawContent = chapters[ci].content || '';
     const chapterText = sanitizeTextForAiPrompt(rawContent);
     const chapterLen = chapterText.length;
-
-    for (let pos = 0; pos < chapterLen; pos += CHUNK_SIZE - CHUNK_OVERLAP) {
-      const start = globalOffset + pos;
-      if (start >= upperBound) break;
-
-      const end = Math.min(globalOffset + pos + CHUNK_SIZE, globalOffset + chapterLen);
-      const effectiveEnd = Math.min(end, upperBound);
-      if (effectiveEnd <= lowerBound) continue;
-
-      const text = chapterText.slice(pos, pos + (effectiveEnd - start));
-      if (text.length < 20) continue;
-
+    const ranges = buildChapterChunkRanges(chapterText, globalOffset, lowerBound, upperBound);
+    for (const range of ranges) {
+      const start = globalOffset + range.start;
+      const end = globalOffset + range.end;
+      if (end <= lowerBound || start >= upperBound) continue;
+      const text = chapterText.slice(range.start, range.end);
+      if (text.length < MIN_CHUNK_TEXT_LENGTH) continue;
       chunks.push({
-        id: `${bookId}_ch${ci}_${pos}`,
+        id: `${bookId}_ch${ci}_${range.start}`,
         bookId,
         chapterIndex: ci,
         startOffset: start,
-        endOffset: effectiveEnd,
+        endOffset: end,
         text,
       });
     }
@@ -1216,6 +1382,31 @@ export const getBookIndexedUpTo = async (bookId: string): Promise<number> => {
   }
 };
 
+export const shouldBuildBookIndex = async (
+  bookId: string,
+  chapters: Chapter[],
+  maxGlobalOffset: number,
+): Promise<boolean> => {
+  const requestedTargetOffset = clampOffset(maxGlobalOffset, 0);
+  if (!bookId || !Array.isArray(chapters) || chapters.length === 0 || requestedTargetOffset <= 0) return false;
+
+  const metrics = getPreparedChapterMetrics(chapters);
+  const targetOffset = clampOffsetWithin(requestedTargetOffset, metrics.sanitizedTotalLength, requestedTargetOffset);
+  if (targetOffset <= 0) return false;
+
+  try {
+    const contentSignature = createChaptersSignature(chapters);
+    const meta = await getBookMeta(bookId);
+    if (!meta) return true;
+    if ((meta.chunkCount || 0) <= 0) return true;
+    if (meta.contentSignature !== contentSignature) return true;
+    return targetOffset > clampOffset(meta.indexedUpTo || 0, 0);
+  } catch {
+    // If metadata cannot be read reliably, prefer rebuilding instead of skipping.
+    return true;
+  }
+};
+
 export const indexBookForRag = async (
   bookId: string,
   chapters: Chapter[],
@@ -1280,21 +1471,15 @@ export const indexBookForRag = async (
   for (const chapter of metrics.chapters) {
     if (chapter.endOffset <= indexedUpTo) continue;
     if (chapter.startOffset >= targetOffset) break;
-
-    const chapterLen = chapter.text.length;
-    for (let pos = 0; pos < chapterLen; pos += CHUNK_STEP) {
-      const start = chapter.startOffset + pos;
-      if (start >= targetOffset) break;
-
-      const end = Math.min(chapter.startOffset + pos + CHUNK_SIZE, chapter.endOffset);
-      const effectiveEnd = Math.min(end, targetOffset);
-      if (effectiveEnd <= indexedUpTo) continue;
-
-      const text = chapter.text.slice(pos, pos + (effectiveEnd - start));
+    const ranges = buildChapterChunkRanges(chapter.text, chapter.startOffset, indexedUpTo, targetOffset);
+    for (const range of ranges) {
+      const start = chapter.startOffset + range.start;
+      const effectiveEnd = chapter.startOffset + range.end;
+      const text = chapter.text.slice(range.start, range.end);
       if (text.length < MIN_CHUNK_TEXT_LENGTH) continue;
 
       pendingChunks.push({
-        id: `${bookId}_ch${chapter.chapterIndex}_${pos}`,
+        id: `${bookId}_ch${chapter.chapterIndex}_${range.start}`,
         bookId,
         chapterIndex: chapter.chapterIndex,
         startOffset: start,

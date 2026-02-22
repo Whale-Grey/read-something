@@ -1741,7 +1741,7 @@ const App: React.FC = () => {
           const {
             warmupRagModel,
             ensureBookIndexedUpTo,
-            getBookIndexedUpTo,
+            shouldBuildBookIndex,
             estimateRagSafeOffset,
           } = await import('./utils/ragEngine');
 
@@ -1762,8 +1762,8 @@ const App: React.FC = () => {
             return;
           }
 
-          const indexedUpTo = await getBookIndexedUpTo(book.id);
-          if (indexedUpTo >= fullIndexTargetOffset) {
+          const needsIndexWork = await shouldBuildBookIndex(book.id, chapters, fullIndexTargetOffset);
+          if (!needsIndexWork) {
             releaseWarmupLock();
             return;
           }
@@ -1853,7 +1853,7 @@ const App: React.FC = () => {
     void (async () => {
       try {
         if (books.length === 0) return;
-        const { getBookIndexedUpTo, estimateRagSafeOffset } = await import('./utils/ragEngine');
+        const { shouldBuildBookIndex, estimateRagSafeOffset } = await import('./utils/ragEngine');
 
         const orderedBooks = activeBook
           ? [
@@ -1876,8 +1876,8 @@ const App: React.FC = () => {
           const fullIndexTargetOffset = estimateRagSafeOffset(chapters, null, Number.MAX_SAFE_INTEGER);
           if (fullIndexTargetOffset <= 0) continue;
 
-          const indexedUpTo = await getBookIndexedUpTo(book.id);
-          if (indexedUpTo >= fullIndexTargetOffset) continue;
+          const needsIndexWork = await shouldBuildBookIndex(book.id, chapters, fullIndexTargetOffset);
+          if (!needsIndexWork) continue;
 
           warmupRagForBook(book, 'resume');
           break;
