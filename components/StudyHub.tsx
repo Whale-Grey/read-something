@@ -4,6 +4,7 @@ import {
   Send, ChevronLeft, ChevronRight, Check, RotateCcw, HelpCircle,
   Loader2, BookMarked, CheckCircle2, NotebookPen, CircleCheckBig,
   BookPlus, UserCircle, Edit2, Link, FileUp, ChevronDown, Feather, Scroll,
+  Heading1, Heading2, Heading3, Pilcrow, Bold, Italic, ListOrdered, List as ListIcon,
 } from 'lucide-react';
 import {
   Book, ApiConfig, RagApiConfigResolver, Notebook, StudyNote, StudyNoteCommentThread,
@@ -43,8 +44,33 @@ interface StudyHubProps {
 type HubTab = 'notes' | 'quiz';
 type NotesView = 'list' | 'detail' | 'editor';
 type QuizView = 'history' | 'config' | 'play' | 'result';
+type NoteBlockStyleTag = 'p' | 'h1' | 'h2' | 'h3';
+type NoteInlineStyleKey = 'bold' | 'italic';
+type NoteListStyleKey = 'ordered-list' | 'bullet-list';
+type NoteStylePresetKey =
+  | 'heading-1'
+  | 'heading-2'
+  | 'heading-3'
+  | 'body'
+  | NoteInlineStyleKey
+  | NoteListStyleKey;
+
+type NoteToolbarState = {
+  block: NoteBlockStyleTag | null;
+  bold: boolean;
+  italic: boolean;
+  orderedList: boolean;
+  bulletList: boolean;
+};
 
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const DEFAULT_NOTE_TOOLBAR_STATE: NoteToolbarState = {
+  block: null,
+  bold: false,
+  italic: false,
+  orderedList: false,
+  bulletList: false,
+};
 
 const StudyHub: React.FC<StudyHubProps> = ({
   isDarkMode, books, personas, activePersonaId, characters,
@@ -83,6 +109,9 @@ const StudyHub: React.FC<StudyHubProps> = ({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [closingCreateModal, setClosingCreateModal] = useState(false);
   const [noteContent, setNoteContent] = useState('');
+  const [noteToolbarState, setNoteToolbarState] = useState<NoteToolbarState>(DEFAULT_NOTE_TOOLBAR_STATE);
+  const [noteToolbarPressedKey, setNoteToolbarPressedKey] = useState<NoteStylePresetKey | null>(null);
+  const [isNoteEditorFocused, setIsNoteEditorFocused] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [commentReplyInputs, setCommentReplyInputs] = useState<Record<string, string>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -158,6 +187,8 @@ const StudyHub: React.FC<StudyHubProps> = ({
   const editCoverFileInputRef = useRef<HTMLInputElement>(null);
   const charDropdownRef = useRef<HTMLDivElement>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
+  const noteEditorRef = useRef<HTMLDivElement | null>(null);
+  const noteEditorSyncingRef = useRef(false);
 
   // ─── Load data ───
   useEffect(() => {
@@ -265,6 +296,465 @@ const StudyHub: React.FC<StudyHubProps> = ({
   const getPersona = (id: string) => personas.find((p) => p.id === id);
   const getCharacter = (id: string) => characters.find((c) => c.id === id);
   const getBook = (id: string) => books.find((b) => b.id === id);
+
+  const escapeHtml = (value: string): string => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  const normalizeInlineText = (value: string): string => value.replace(/\u00A0/g, ' ');
+
+  const stripMarkdownForPreview = (value: string): string => value
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/\n+/g, ' ')
+    .trim();
+
+  const renderInlineMarkdownToHtml = (value: string): string => {
+    const escaped = escapeHtml(value);
+    return escaped
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>');
+  };
+
+  const renderMarkdownToHtml = useCallback((markdown: string): string => {
+    const normalized = (markdown || '').replace(/\r/g, '').trim();
+    if (!normalized) return '<p><br></p>';
+
+    const lines = normalized.split('\n');
+    const parts: string[] = [];
+    let index = 0;
+
+    while (index < lines.length) {
+      const line = lines[index].trim();
+      if (!line) {
+        index += 1;
+        continue;
+      }
+
+      const heading1Match = line.match(/^#\s+(.+)$/);
+      if (heading1Match) {
+        parts.push(`<h1>${renderInlineMarkdownToHtml(heading1Match[1].trim())}</h1>`);
+        index += 1;
+        continue;
+      }
+
+      const heading2Match = line.match(/^##\s+(.+)$/);
+      if (heading2Match) {
+        parts.push(`<h2>${renderInlineMarkdownToHtml(heading2Match[1].trim())}</h2>`);
+        index += 1;
+        continue;
+      }
+
+      const heading3Match = line.match(/^###\s+(.+)$/);
+      if (heading3Match) {
+        parts.push(`<h3>${renderInlineMarkdownToHtml(heading3Match[1].trim())}</h3>`);
+        index += 1;
+        continue;
+      }
+
+      if (/^[-*+]\s+/.test(line)) {
+        const items: string[] = [];
+        while (index < lines.length) {
+          const itemLine = lines[index].trim();
+          const match = itemLine.match(/^[-*+]\s+(.+)$/);
+          if (!match) break;
+          items.push(`<li>${renderInlineMarkdownToHtml(match[1].trim())}</li>`);
+          index += 1;
+        }
+        parts.push(`<ul>${items.join('')}</ul>`);
+        continue;
+      }
+
+      if (/^\d+\.\s+/.test(line)) {
+        const items: string[] = [];
+        while (index < lines.length) {
+          const itemLine = lines[index].trim();
+          const match = itemLine.match(/^\d+\.\s+(.+)$/);
+          if (!match) break;
+          items.push(`<li>${renderInlineMarkdownToHtml(match[1].trim())}</li>`);
+          index += 1;
+        }
+        parts.push(`<ol>${items.join('')}</ol>`);
+        continue;
+      }
+
+      parts.push(`<p>${renderInlineMarkdownToHtml(line)}</p>`);
+      index += 1;
+    }
+
+    return parts.join('') || '<p><br></p>';
+  }, []);
+
+  const extractInlineMarkdownFromNode = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return normalizeInlineText(node.textContent || '');
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+    const element = node as HTMLElement;
+    const tag = element.tagName.toLowerCase();
+    if (tag === 'br') return '\n';
+
+    const childText = Array.from(element.childNodes).map(extractInlineMarkdownFromNode).join('');
+    if (tag === 'strong' || tag === 'b') return childText ? `**${childText}**` : '';
+    if (tag === 'em' || tag === 'i') return childText ? `*${childText}*` : '';
+    return childText;
+  };
+
+  const extractBlocksFromNode = (node: Node): string[] => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = normalizeInlineText(node.textContent || '').trim();
+      return text ? [text] : [];
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return [];
+
+    const element = node as HTMLElement;
+    const tag = element.tagName.toLowerCase();
+
+    if (tag === 'h1') {
+      const text = extractInlineMarkdownFromNode(element).trim();
+      return text ? [`# ${text}`] : [];
+    }
+    if (tag === 'h2') {
+      const text = extractInlineMarkdownFromNode(element).trim();
+      return text ? [`## ${text}`] : [];
+    }
+    if (tag === 'h3') {
+      const text = extractInlineMarkdownFromNode(element).trim();
+      return text ? [`### ${text}`] : [];
+    }
+    if (tag === 'p') {
+      const text = extractInlineMarkdownFromNode(element).trim();
+      return text ? [text] : [];
+    }
+    if (tag === 'ul') {
+      const items = Array.from(element.children)
+        .filter((child) => child.tagName.toLowerCase() === 'li')
+        .map((li) => extractInlineMarkdownFromNode(li).trim())
+        .filter(Boolean)
+        .map((item) => `- ${item}`);
+      return items;
+    }
+    if (tag === 'ol') {
+      const items = Array.from(element.children)
+        .filter((child) => child.tagName.toLowerCase() === 'li')
+        .map((li) => extractInlineMarkdownFromNode(li).trim())
+        .filter(Boolean)
+        .map((item, idx) => `${idx + 1}. ${item}`);
+      return items;
+    }
+    if (tag === 'div' || tag === 'section' || tag === 'article') {
+      const blocks = Array.from(element.childNodes).flatMap(extractBlocksFromNode);
+      if (blocks.length > 0) return blocks;
+      const text = extractInlineMarkdownFromNode(element).trim();
+      return text ? [text] : [];
+    }
+
+    const text = extractInlineMarkdownFromNode(element).trim();
+    return text ? [text] : [];
+  };
+
+  const extractMarkdownFromEditorHtml = useCallback((html: string): string => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+    const root = doc.body.firstElementChild;
+    if (!root) return '';
+    const blocks = Array.from(root.childNodes).flatMap(extractBlocksFromNode);
+    return blocks.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }, []);
+
+  const syncNoteEditorFromMarkdown = useCallback((markdown: string) => {
+    const editor = noteEditorRef.current;
+    if (!editor) return;
+    const nextHtml = renderMarkdownToHtml(markdown);
+    if (editor.innerHTML === nextHtml) return;
+    noteEditorSyncingRef.current = true;
+    editor.innerHTML = nextHtml;
+    noteEditorSyncingRef.current = false;
+  }, [renderMarkdownToHtml]);
+
+  const handleNoteEditorInput = useCallback(() => {
+    if (noteEditorSyncingRef.current) return;
+    const editor = noteEditorRef.current;
+    if (!editor) return;
+    const markdown = extractMarkdownFromEditorHtml(editor.innerHTML);
+    setNoteContent(markdown);
+  }, [extractMarkdownFromEditorHtml]);
+
+  const areNoteToolbarStatesEqual = (left: NoteToolbarState, right: NoteToolbarState) =>
+    left.block === right.block &&
+    left.bold === right.bold &&
+    left.italic === right.italic &&
+    left.orderedList === right.orderedList &&
+    left.bulletList === right.bulletList;
+
+  const resolveNoteBlockStyle = useCallback((): NoteBlockStyleTag | null => {
+    let raw = '';
+    try {
+      raw = String(document.queryCommandValue('formatBlock') || '')
+        .replace(/["'<>]/g, '')
+        .trim()
+        .toLowerCase();
+    } catch {
+      return null;
+    }
+
+    if (!raw || raw === 'normal' || raw === 'div' || raw === 'section' || raw === 'article') return 'p';
+    if (raw === 'p' || raw === 'h1' || raw === 'h2' || raw === 'h3') return raw;
+    return null;
+  }, []);
+
+  const isSelectionInNoteEditor = useCallback(() => {
+    const editor = noteEditorRef.current;
+    if (!editor) return false;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return false;
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    if (!anchorNode || !focusNode) return false;
+    return editor.contains(anchorNode) && editor.contains(focusNode);
+  }, []);
+
+  const resolveNoteSelectionSnapshot = useCallback((): {
+    selection: Selection;
+    range: Range;
+    editor: HTMLDivElement;
+    collapsed: boolean;
+    currentBlock: HTMLElement | null;
+  } | null => {
+    const editor = noteEditorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    if (!anchorNode || !focusNode) return null;
+    if (!editor.contains(anchorNode) || !editor.contains(focusNode)) return null;
+
+    let currentBlock: HTMLElement | null = null;
+    let probe: Node | null = anchorNode;
+    while (probe && probe !== editor) {
+      if (probe.nodeType === Node.ELEMENT_NODE) {
+        const element = probe as HTMLElement;
+        const tag = element.tagName.toLowerCase();
+        if (tag === 'p' || tag === 'h1' || tag === 'h2' || tag === 'h3' || tag === 'li') {
+          currentBlock = element;
+          break;
+        }
+      }
+      probe = probe.parentNode;
+    }
+    if (!currentBlock) {
+      const firstBlock = editor.querySelector('p, h1, h2, h3, li');
+      currentBlock = firstBlock instanceof HTMLElement ? firstBlock : null;
+    }
+
+    return {
+      selection,
+      range,
+      editor,
+      collapsed: selection.isCollapsed,
+      currentBlock,
+    };
+  }, []);
+
+  const isNoteBlockEffectivelyEmpty = useCallback((element: HTMLElement) => {
+    const text = (element.textContent || '').replace(/\u200B/g, '').trim();
+    if (text) return false;
+    const hasMedia = !!element.querySelector('img, video, audio, iframe, table, blockquote, pre');
+    return !hasMedia;
+  }, []);
+
+  const placeCaretAtNodeStart = useCallback((selection: Selection, node: HTMLElement) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }, []);
+
+  const insertTypingTargetAfterCurrentBlock = useCallback((target: NoteBlockStyleTag | NoteListStyleKey) => {
+    const snapshot = resolveNoteSelectionSnapshot();
+    if (!snapshot) return false;
+
+    const { selection, editor, currentBlock } = snapshot;
+    const anchor = currentBlock
+      ? ((currentBlock.tagName.toLowerCase() === 'li'
+        ? (currentBlock.closest('ol, ul') as HTMLElement | null)
+        : currentBlock) || currentBlock)
+      : editor.lastElementChild as HTMLElement | null;
+
+    let insertRoot: HTMLElement;
+    let caretNode: HTMLElement;
+    if (target === 'ordered-list' || target === 'bullet-list') {
+      const list = document.createElement(target === 'ordered-list' ? 'ol' : 'ul');
+      const item = document.createElement('li');
+      item.appendChild(document.createElement('br'));
+      list.appendChild(item);
+      insertRoot = list;
+      caretNode = item;
+    } else {
+      const block = document.createElement(target);
+      block.appendChild(document.createElement('br'));
+      insertRoot = block;
+      caretNode = block;
+    }
+
+    if (anchor && anchor.parentNode) {
+      anchor.parentNode.insertBefore(insertRoot, anchor.nextSibling);
+    } else {
+      editor.appendChild(insertRoot);
+    }
+    editor.focus();
+    placeCaretAtNodeStart(selection, caretNode);
+    return true;
+  }, [placeCaretAtNodeStart, resolveNoteSelectionSnapshot]);
+
+  const refreshNoteToolbarState = useCallback(() => {
+    if (!isSelectionInNoteEditor()) return;
+    const safeQueryCommandState = (command: string) => {
+      try {
+        return document.queryCommandState(command);
+      } catch {
+        return false;
+      }
+    };
+
+    const nextState: NoteToolbarState = {
+      block: resolveNoteBlockStyle(),
+      bold: safeQueryCommandState('bold'),
+      italic: safeQueryCommandState('italic'),
+      orderedList: safeQueryCommandState('insertOrderedList'),
+      bulletList: safeQueryCommandState('insertUnorderedList'),
+    };
+    setNoteToolbarState((prev) => (areNoteToolbarStatesEqual(prev, nextState) ? prev : nextState));
+  }, [isSelectionInNoteEditor, resolveNoteBlockStyle]);
+
+  const runNoteEditorCommand = useCallback((command: string, value?: string) => {
+    const editor = noteEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(command, false, value);
+    window.requestAnimationFrame(() => {
+      handleNoteEditorInput();
+      refreshNoteToolbarState();
+    });
+  }, [handleNoteEditorInput, refreshNoteToolbarState]);
+
+  const toggleNoteBlockStyle = useCallback((blockTag: NoteBlockStyleTag) => {
+    const snapshot = resolveNoteSelectionSnapshot();
+    const current = resolveNoteBlockStyle();
+    const next = current === blockTag ? 'p' : blockTag;
+
+    if (snapshot?.collapsed) {
+      const currentBlock = snapshot.currentBlock;
+      const hasExistingText = currentBlock
+        ? !isNoteBlockEffectivelyEmpty(currentBlock)
+        : !!snapshot.editor.textContent?.trim();
+      if (hasExistingText) {
+        insertTypingTargetAfterCurrentBlock(next);
+        return;
+      }
+    }
+
+    runNoteEditorCommand('formatBlock', next);
+  }, [insertTypingTargetAfterCurrentBlock, isNoteBlockEffectivelyEmpty, resolveNoteBlockStyle, resolveNoteSelectionSnapshot, runNoteEditorCommand]);
+
+  const toggleNoteInlineStyle = useCallback((styleKey: NoteInlineStyleKey) => {
+    runNoteEditorCommand(styleKey);
+  }, [runNoteEditorCommand]);
+
+  const toggleNoteListStyle = useCallback((styleKey: NoteListStyleKey) => {
+    const snapshot = resolveNoteSelectionSnapshot();
+    const isOrdered = styleKey === 'ordered-list';
+    const isAlreadyActive = isOrdered ? noteToolbarState.orderedList : noteToolbarState.bulletList;
+
+    if (snapshot?.collapsed) {
+      const currentBlock = snapshot.currentBlock;
+      const hasExistingText = currentBlock
+        ? !isNoteBlockEffectivelyEmpty(currentBlock)
+        : !!snapshot.editor.textContent?.trim();
+      if (hasExistingText) {
+        const nextTarget: NoteBlockStyleTag | NoteListStyleKey = isAlreadyActive ? 'p' : styleKey;
+        insertTypingTargetAfterCurrentBlock(nextTarget);
+        return;
+      }
+    }
+
+    runNoteEditorCommand(isOrdered ? 'insertOrderedList' : 'insertUnorderedList');
+  }, [insertTypingTargetAfterCurrentBlock, isNoteBlockEffectivelyEmpty, noteToolbarState.bulletList, noteToolbarState.orderedList, resolveNoteSelectionSnapshot, runNoteEditorCommand]);
+
+  const handleNoteStyleButtonPointerDown = useCallback((key: NoteStylePresetKey, event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setNoteToolbarPressedKey(key);
+  }, []);
+
+  const clearPressedNoteStyleButton = useCallback(() => {
+    setNoteToolbarPressedKey(null);
+  }, []);
+
+  const handleNoteEditorPaste = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const text = event.clipboardData.getData('text/plain');
+    if (!text) return;
+    document.execCommand('insertText', false, text);
+    window.requestAnimationFrame(() => {
+      handleNoteEditorInput();
+      refreshNoteToolbarState();
+    });
+  }, [handleNoteEditorInput, refreshNoteToolbarState]);
+
+  const noteStylePresets: Array<{
+    key: NoteStylePresetKey;
+    label: string;
+    icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+    onClick: () => void;
+    active: boolean;
+  }> = [
+    { key: 'heading-1', label: '一级标题', icon: Heading1, onClick: () => toggleNoteBlockStyle('h1'), active: noteToolbarState.block === 'h1' },
+    { key: 'heading-2', label: '二级标题', icon: Heading2, onClick: () => toggleNoteBlockStyle('h2'), active: noteToolbarState.block === 'h2' },
+    { key: 'heading-3', label: '三级标题', icon: Heading3, onClick: () => toggleNoteBlockStyle('h3'), active: noteToolbarState.block === 'h3' },
+    { key: 'body', label: '正文段落', icon: Pilcrow, onClick: () => toggleNoteBlockStyle('p'), active: noteToolbarState.block === 'p' },
+    { key: 'bold', label: '粗体', icon: Bold, onClick: () => toggleNoteInlineStyle('bold'), active: noteToolbarState.bold },
+    { key: 'italic', label: '斜体', icon: Italic, onClick: () => toggleNoteInlineStyle('italic'), active: noteToolbarState.italic },
+    { key: 'ordered-list', label: '有序列表', icon: ListOrdered, onClick: () => toggleNoteListStyle('ordered-list'), active: noteToolbarState.orderedList },
+    { key: 'bullet-list', label: '无序列表', icon: ListIcon, onClick: () => toggleNoteListStyle('bullet-list'), active: noteToolbarState.bulletList },
+  ];
+
+  useEffect(() => {
+    if (notesView !== 'editor') return;
+    syncNoteEditorFromMarkdown(noteContent);
+  }, [notesView, activeNote?.id, syncNoteEditorFromMarkdown]);
+
+  useEffect(() => {
+    if (notesView !== 'editor') {
+      setNoteToolbarState(DEFAULT_NOTE_TOOLBAR_STATE);
+      setNoteToolbarPressedKey(null);
+      setIsNoteEditorFocused(false);
+      return;
+    }
+    const handleSelectionChange = () => refreshNoteToolbarState();
+    document.addEventListener('selectionchange', handleSelectionChange);
+    window.requestAnimationFrame(refreshNoteToolbarState);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, [notesView, activeNote?.id, refreshNoteToolbarState]);
+
+  useEffect(() => {
+    if (!noteToolbarPressedKey) return;
+    const release = () => setNoteToolbarPressedKey(null);
+    window.addEventListener('pointerup', release, { passive: true });
+    window.addEventListener('pointercancel', release, { passive: true });
+    return () => {
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+    };
+  }, [noteToolbarPressedKey]);
 
   const filterBooks = (searchTerm: string, selectedTags: string[]) => {
     return books.filter((book) => {
@@ -1866,7 +2356,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
                   ...(paperStyle.shadow && { boxShadow: paperStyle.shadow }),
                 }}
               >
-                <p className={`text-sm line-clamp-2 ${headingClass}`} style={{ fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif' }}>{note.content || '空白笔记'}</p>
+                <p className={`text-sm line-clamp-2 ${headingClass}`} style={{ fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif' }}>{stripMarkdownForPreview(note.content) || '空白笔记'}</p>
                 <div className="flex items-center justify-between mt-2">
 	                  <span className={`text-[10px] ${subTextClass}`}>
 	                    {new Date(note.updatedAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -1923,6 +2413,35 @@ const StudyHub: React.FC<StudyHubProps> = ({
         <div className="flex-1 overflow-y-auto px-6 no-scrollbar">
           <div className="pt-3 pb-24 space-y-4 animate-fade-in">
 
+        {/* Markdown style toolbar */}
+        <div className="w-full overflow-visible py-1">
+          <div className="grid grid-cols-8 gap-2 overflow-visible">
+            {noteStylePresets.map((preset) => {
+              const Icon = preset.icon;
+              const isPressed = noteToolbarPressedKey === preset.key;
+              return (
+                <button
+                  key={preset.key}
+                  type="button"
+                  title={preset.label}
+                  aria-label={preset.label}
+                  onPointerDown={(event) => handleNoteStyleButtonPointerDown(preset.key, event)}
+                  onPointerUp={clearPressedNoteStyleButton}
+                  onPointerLeave={clearPressedNoteStyleButton}
+                  onPointerCancel={clearPressedNoteStyleButton}
+                  onClick={preset.onClick}
+                  className={`w-full h-9 rounded-lg text-xs font-semibold flex items-center justify-center whitespace-nowrap transition-all ${
+                    isPressed ? `${pressedClass} scale-[0.96]` : `${btnClass} active:scale-[0.98]`
+                  } text-slate-500 ${preset.active ? '' : 'hover:text-rose-400'}`}
+                  style={preset.active ? { color: 'rgb(var(--theme-500) / 1)' } : undefined}
+                >
+                  <Icon size={16} strokeWidth={2.15} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Lined paper */}
         <div className={`rounded-2xl overflow-hidden ${cardClass}`}
           style={{
@@ -1939,11 +2458,23 @@ const StudyHub: React.FC<StudyHubProps> = ({
               <div className="absolute top-0 bottom-0 left-10" style={{ width: '2px', background: marginLineColor }} />
             )}
 
-            <textarea
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              placeholder="随便写点什么吧"
-              className={`w-full min-h-[300px] resize-none bg-transparent outline-none ${paperStyle.hideMarginLine ? 'pl-4' : 'pl-14'} pr-4 pt-4 pb-4 text-sm no-scrollbar`}
+            <div
+              ref={noteEditorRef}
+              contentEditable
+              suppressContentEditableWarning
+              spellCheck={false}
+              onInput={handleNoteEditorInput}
+              onFocus={() => {
+                setIsNoteEditorFocused(true);
+                refreshNoteToolbarState();
+              }}
+              onBlur={() => {
+                setIsNoteEditorFocused(false);
+              }}
+              onKeyUp={refreshNoteToolbarState}
+              onMouseUp={refreshNoteToolbarState}
+              onPaste={handleNoteEditorPaste}
+              className={`studyhub-note-editor w-full min-h-[300px] bg-transparent outline-none ${paperStyle.hideMarginLine ? 'pl-4' : 'pl-14'} pr-4 pt-4 pb-4 text-sm no-scrollbar overflow-x-hidden break-words`}
               style={{
                 lineHeight: `${lineHeight}px`,
                 ...(!paperStyle.isCustomImage && paperStyle.css !== 'none' && {
@@ -1954,7 +2485,15 @@ const StudyHub: React.FC<StudyHubProps> = ({
                 color: isDarkMode ? '#e2e8f0' : '#334155',
                 fontFamily: '"Noto Serif SC", "Source Han Serif CN", serif',
               }}
-            />
+            ></div>
+            {!noteContent.trim() && !isNoteEditorFocused && (
+              <div
+                className={`absolute top-4 pointer-events-none text-sm ${paperStyle.hideMarginLine ? 'left-4' : 'left-14'} ${subTextClass}`}
+                style={{ lineHeight: `${lineHeight}px` }}
+              >
+                随便写点什么吧
+              </div>
+            )}
           </div>
         </div>
 

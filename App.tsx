@@ -900,6 +900,14 @@ const App: React.FC = () => {
     document.documentElement.classList.toggle('dark-mode', isDarkMode);
     document.body.classList.toggle('dark-mode', isDarkMode);
   }, [isDarkMode]);
+  // Enable CSS :active on iOS Safari / PWA.
+  // iOS requires a touchstart listener on the document (even a no-op) for
+  // :active pseudo-class to fire on touch events.
+  useEffect(() => {
+    const noop = () => {};
+    document.addEventListener('touchstart', noop, { passive: true });
+    return () => document.removeEventListener('touchstart', noop);
+  }, []);
   useEffect(() => {
     if (!isLikelyIOSRuntime()) return;
 

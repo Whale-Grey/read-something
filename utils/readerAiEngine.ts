@@ -19,6 +19,11 @@ export interface ReadingContextSnapshot {
   highlightedSnippets: string[];
 }
 
+interface VisibleTextRange {
+  start: number;
+  end: number;
+}
+
 interface ParsedAiReply {
   bubblePayload: string;
   underlineText: string | null;
@@ -175,6 +180,304 @@ const scaleOffsetByLength = (offset: number, sourceLength: number, targetLength:
   }
   const safeOffset = clamp(Math.round(offset), 0, sourceLength);
   return clamp(Math.round((safeOffset / sourceLength) * targetLength), 0, targetLength);
+};
+
+interface SentenceSpan {
+  start: number;
+  end: number;
+  boundaryType?: 'sentence' | 'clause';
+}
+
+const SENTENCE_TERMINATOR_CHARS = new Set([
+  '.',
+  '!',
+  '?',
+  '。',
+  '！',
+  '？',
+  '｡',
+  '．',
+  '…',
+]);
+const SENTENCE_CLOSER_CHARS = new Set([
+  '"',
+  "'",
+  '”',
+  '’',
+  ')',
+  ']',
+  '}',
+  '）',
+  '】',
+  '》',
+  '」',
+  '』',
+  '〕',
+  '〗',
+  '〉',
+  '〙',
+  '〛',
+]);
+const CLAUSE_SEPARATOR_CHARS = new Set([
+  ',',
+  '，',
+  '、',
+  ';',
+  '；',
+  ':',
+  '：',
+  '—',
+  '–',
+  '―',
+  '－',
+  '-',
+]);
+const DASH_SEPARATOR_CHARS = new Set(['—', '–', '―', '－', '-']);
+
+const isDigitLikeChar = (char: string) => /[0-9\uFF10-\uFF19]/.test(char);
+const isAsciiWordChar = (char: string) => /[A-Za-z0-9]/.test(char);
+
+const shouldSkipSentenceBoundaryAt = (text: string, index: number) => {
+  const current = text[index] || '';
+  if (current !== '.' && current !== '．') return false;
+  const prev = text[index - 1] || '';
+  const next = text[index + 1] || '';
+  // Avoid splitting decimals like 4.5
+  return isDigitLikeChar(prev) && isDigitLikeChar(next);
+};
+
+const shouldSkipClauseBoundaryAt = (text: string, index: number) => {
+  const current = text[index] || '';
+  const prev = text[index - 1] || '';
+  const next = text[index + 1] || '';
+
+  if ((current === ',' || current === '，') && isDigitLikeChar(prev) && isDigitLikeChar(next)) {
+    // Avoid splitting number grouping like 1,000
+    return true;
+  }
+
+  if ((current === ':' || current === '：') && isDigitLikeChar(prev) && isDigitLikeChar(next)) {
+    // Avoid splitting times like 5:00 / 5：00PM
+    return true;
+  }
+
+  if (current === '-') {
+    if (prev === '-' || next === '-') return false;
+    // Keep hyphenated words/ranges intact: co-op / 2024-2026
+    if ((isAsciiWordChar(prev) && isAsciiWordChar(next)) || (isDigitLikeChar(prev) && isDigitLikeChar(next))) {
+      return true;
+    }
+    // Single '-' without surrounding spaces is usually not a clause separator.
+    if (!/\s/.test(prev) && !/\s/.test(next)) return true;
+  }
+
+  return false;
+};
+
+const resolveBoundaryTypeAt = (text: string, index: number): SentenceSpan['boundaryType'] | null => {
+  const current = text[index] || '';
+  if (!current) return null;
+  if (current === '\r' || current === '\n') return 'clause';
+  if (SENTENCE_TERMINATOR_CHARS.has(current)) {
+    return shouldSkipSentenceBoundaryAt(text, index) ? null : 'sentence';
+  }
+  if (CLAUSE_SEPARATOR_CHARS.has(current)) {
+    return shouldSkipClauseBoundaryAt(text, index) ? null : 'clause';
+  }
+  return null;
+};
+
+const resolveBoundaryTypeNearSpanEnd = (text: string, span: SentenceSpan): SentenceSpan['boundaryType'] | null => {
+  if (span.boundaryType) return span.boundaryType;
+  let cursor = clamp(span.end - 1, span.start, text.length - 1);
+  while (cursor >= span.start && /\s/.test(text[cursor])) {
+    cursor -= 1;
+  }
+  while (cursor >= span.start && SENTENCE_CLOSER_CHARS.has(text[cursor])) {
+    cursor -= 1;
+  }
+  while (cursor >= span.start && /\s/.test(text[cursor])) {
+    cursor -= 1;
+  }
+  if (cursor < span.start || cursor >= text.length) return null;
+  return resolveBoundaryTypeAt(text, cursor);
+};
+
+const extendBoundaryEnd = (
+  text: string,
+  startIndex: number,
+  boundaryType: NonNullable<SentenceSpan['boundaryType']>
+) => {
+  let end = startIndex + 1;
+  if (boundaryType === 'sentence') {
+    while (end < text.length && SENTENCE_TERMINATOR_CHARS.has(text[end]) && !shouldSkipSentenceBoundaryAt(text, end)) {
+      end += 1;
+    }
+  } else {
+    const first = text[startIndex] || '';
+    if (DASH_SEPARATOR_CHARS.has(first)) {
+      while (end < text.length && DASH_SEPARATOR_CHARS.has(text[end]) && !shouldSkipClauseBoundaryAt(text, end)) {
+        end += 1;
+      }
+    } else {
+      while (end < text.length && text[end] === first && !shouldSkipClauseBoundaryAt(text, end)) {
+        end += 1;
+      }
+    }
+  }
+  while (end < text.length && SENTENCE_CLOSER_CHARS.has(text[end])) {
+    end += 1;
+  }
+  while (end < text.length && /\s/.test(text[end]) && text[end] !== '\r' && text[end] !== '\n') {
+    end += 1;
+  }
+  return end;
+};
+
+const collectSentenceSpansByIntlSegmenter = (text: string): SentenceSpan[] => {
+  const intlWithSegmenter = Intl as unknown as {
+    Segmenter?: new (
+      locales?: string | string[],
+      options?: { granularity?: string }
+    ) => {
+      segment: (input: string) => Iterable<{ segment: string; index: number }>;
+    };
+  };
+  const SegmenterCtor = intlWithSegmenter.Segmenter;
+  if (!SegmenterCtor) return [];
+
+  try {
+    const segmenter = new SegmenterCtor('und', { granularity: 'sentence' });
+    const segments = Array.from(segmenter.segment(text) as Iterable<{ segment: string; index: number }>);
+    const spans: SentenceSpan[] = [];
+    for (let index = 0; index < segments.length; index += 1) {
+      const current = segments[index];
+      const next = segments[index + 1];
+      const rawStart = Number(current?.index);
+      if (!Number.isFinite(rawStart)) continue;
+      const start = clamp(Math.floor(rawStart), 0, text.length);
+      const fallbackEnd = clamp(start + (current?.segment?.length || 0), start, text.length);
+      const rawEnd = next ? Number(next.index) : text.length;
+      const end = Number.isFinite(rawEnd)
+        ? clamp(Math.floor(rawEnd), start, text.length)
+        : fallbackEnd;
+      if (end <= start) continue;
+      if (!compactText(text.slice(start, end))) continue;
+      const span: SentenceSpan = { start, end };
+      const boundaryType = resolveBoundaryTypeNearSpanEnd(text, span);
+      if (!boundaryType) continue;
+      spans.push({ ...span, boundaryType });
+    }
+    return spans;
+  } catch {
+    return [];
+  }
+};
+
+const collectSentenceSpansByPunctuationFallback = (text: string): SentenceSpan[] => {
+  const spans: SentenceSpan[] = [];
+  const pushSpan = (
+    start: number,
+    end: number,
+    boundaryType?: SentenceSpan['boundaryType']
+  ) => {
+    const safeStart = clamp(start, 0, text.length);
+    const safeEnd = clamp(end, safeStart, text.length);
+    if (safeEnd <= safeStart) return;
+    if (!compactText(text.slice(safeStart, safeEnd))) return;
+    spans.push(boundaryType ? { start: safeStart, end: safeEnd, boundaryType } : { start: safeStart, end: safeEnd });
+  };
+
+  let sentenceStart = 0;
+  let index = 0;
+  while (index < text.length) {
+    const boundaryType = resolveBoundaryTypeAt(text, index);
+    if (!boundaryType) {
+      index += 1;
+      continue;
+    }
+
+    const end = extendBoundaryEnd(text, index, boundaryType);
+
+    pushSpan(sentenceStart, end, boundaryType);
+    sentenceStart = end;
+    index = end;
+  }
+
+  pushSpan(sentenceStart, text.length);
+  return spans;
+};
+
+const collectSentenceSpans = (text: string) => {
+  if (!text) return [];
+  const punctuated = collectSentenceSpansByPunctuationFallback(text);
+  if (punctuated.length > 0) return punctuated;
+  return collectSentenceSpansByIntlSegmenter(text);
+};
+
+const isCompleteSentenceSpan = (text: string, span: SentenceSpan) => {
+  return resolveBoundaryTypeNearSpanEnd(text, span) !== null;
+};
+
+const resolveVisibleSentenceBoundary = (
+  text: string,
+  visibleStart: number,
+  visibleEnd: number
+) => {
+  const safeStart = clamp(visibleStart, 0, text.length);
+  const safeEnd = clamp(visibleEnd, safeStart, text.length);
+  if (safeEnd <= 0 || safeEnd <= safeStart) return null;
+
+  const spans = collectSentenceSpans(text);
+  if (spans.length === 0) return null;
+
+  let lastCompleteBoundary: number | null = null;
+  let lastFullyVisibleCompleteBoundary: number | null = null;
+
+  for (const span of spans) {
+    if (span.end > safeEnd) break;
+    if (!isCompleteSentenceSpan(text, span)) continue;
+    lastCompleteBoundary = span.end;
+    if (span.start >= safeStart) {
+      lastFullyVisibleCompleteBoundary = span.end;
+    }
+  }
+
+  return lastFullyVisibleCompleteBoundary ?? lastCompleteBoundary;
+};
+
+const alignExcerptStartToSentenceBoundary = (
+  text: string,
+  rawStart: number,
+  contextEnd: number,
+  targetExcerptLength: number
+) => {
+  const safeContextEnd = clamp(contextEnd, 0, text.length);
+  const safeRawStart = clamp(rawStart, 0, safeContextEnd);
+  if (safeRawStart <= 0 || safeRawStart >= safeContextEnd) return safeRawStart;
+
+  const spans = collectSentenceSpans(text);
+  if (spans.length === 0) return safeRawStart;
+
+  let previousBoundary = safeRawStart;
+  let nextBoundary = safeContextEnd;
+  let foundNext = false;
+  for (const span of spans) {
+    if (span.end <= safeRawStart) {
+      previousBoundary = span.end;
+      continue;
+    }
+    if (span.start >= safeRawStart) {
+      nextBoundary = span.start;
+      foundNext = true;
+      break;
+    }
+  }
+
+  if (!foundNext) return previousBoundary;
+  const minExcerptLength = Math.max(80, Math.round(Math.max(0, targetExcerptLength) * 0.45));
+  if (safeContextEnd - nextBoundary < minExcerptLength) return previousBoundary;
+  return nextBoundary;
 };
 
 const ensureBubbleCount = (items: string[], minCount: number, maxCount: number) => {
@@ -730,6 +1033,8 @@ export const buildReadingContextSnapshot = (params: {
   readingPosition: ReaderPositionState | null;
   visibleRatio?: number;
   excerptCharCount?: number;
+  visibleTextRange?: VisibleTextRange | null;
+  activeChapterRenderedText?: string;
 }): ReadingContextSnapshot => {
   const { chapters, bookText, highlightRangesByChapter, readingPosition } = params;
   const visibleRatio = clamp(params.visibleRatio || 0, 0, 1);
@@ -738,12 +1043,27 @@ export const buildReadingContextSnapshot = (params: {
     Number.isFinite(excerptCharCountRaw)
       ? Math.max(0, Math.round(excerptCharCountRaw))
       : DEFAULT_READING_EXCERPT_CHAR_COUNT;
+  const visibleTextStartRaw = toFiniteNonNegativeInt(params.visibleTextRange?.start);
+  const visibleTextEndRaw = toFiniteNonNegativeInt(params.visibleTextRange?.end);
+  const hasVisibleTextRangeHint = visibleTextStartRaw !== null && visibleTextEndRaw !== null;
+  const activeChapterRenderedText = typeof params.activeChapterRenderedText === 'string'
+    ? params.activeChapterRenderedText
+    : '';
+  const readingChapterIndex = readingPosition?.chapterIndex;
 
   const chapterMeta =
     chapters.length > 0
-      ? chapters.map((chapter) => {
+      ? chapters.map((chapter, index) => {
           const rawText = chapter.content || '';
-          const normalizedText = normalizeReaderLayoutText(rawText);
+          const shouldUseRenderedTextOverride =
+            activeChapterRenderedText.length > 0 &&
+            readingChapterIndex !== null &&
+            typeof readingChapterIndex === 'number' &&
+            readingChapterIndex >= 0 &&
+            index === readingChapterIndex;
+          const normalizedText = shouldUseRenderedTextOverride
+            ? activeChapterRenderedText
+            : normalizeReaderLayoutText(rawText);
           return {
             rawLength: rawText.length,
             normalizedLength: normalizedText.length,
@@ -803,14 +1123,37 @@ export const buildReadingContextSnapshot = (params: {
       const fallbackRawGlobal = clamp(chapterRawStart + chapterRawOffset, 0, totalRawLength);
       contextEnd = scaleOffsetByLength(fallbackRawGlobal, totalRawLength, totalNormalizedLength);
     }
+
+    if (hasVisibleTextRangeHint) {
+      const localVisibleStart = clamp(Math.min(visibleTextStartRaw, visibleTextEndRaw), 0, chapter.normalizedLength);
+      const localVisibleEnd = clamp(Math.max(visibleTextStartRaw, visibleTextEndRaw), localVisibleStart, chapter.normalizedLength);
+      const visibleSentenceBoundary = resolveVisibleSentenceBoundary(
+        chapter.normalizedText,
+        localVisibleStart,
+        localVisibleEnd
+      );
+      if (visibleSentenceBoundary !== null) {
+        contextEnd = clamp(chapterNormalizedStart + visibleSentenceBoundary, 0, totalNormalizedLength);
+      }
+    }
   } else if (totalRawLength > 0) {
     const viewportTailOffset = Math.round(totalRawLength * visibleRatio * CONTEXT_VIEWPORT_TAIL_WEIGHT);
     const shiftedRawOffset = clamp(safeRawOffset + viewportTailOffset, 0, totalRawLength);
     contextEnd = scaleOffsetByLength(shiftedRawOffset, totalRawLength, totalNormalizedLength);
+
+    if (hasVisibleTextRangeHint) {
+      const visibleStart = clamp(Math.min(visibleTextStartRaw, visibleTextEndRaw), 0, totalNormalizedLength);
+      const visibleEnd = clamp(Math.max(visibleTextStartRaw, visibleTextEndRaw), visibleStart, totalNormalizedLength);
+      const visibleSentenceBoundary = resolveVisibleSentenceBoundary(joinedBookText, visibleStart, visibleEnd);
+      if (visibleSentenceBoundary !== null) {
+        contextEnd = visibleSentenceBoundary;
+      }
+    }
   }
 
   contextEnd = clamp(contextEnd, 0, totalNormalizedLength);
-  const start = clamp(contextEnd - excerptCharCount, 0, contextEnd);
+  const rawStart = clamp(contextEnd - excerptCharCount, 0, contextEnd);
+  const start = alignExcerptStartToSentenceBoundary(joinedBookText, rawStart, contextEnd, excerptCharCount);
   const excerpt = joinedBookText.slice(start, contextEnd);
 
   const highlightedSnippets: string[] = [];

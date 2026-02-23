@@ -43,6 +43,7 @@ import { exportCachedTtsAudiobookZip } from '../utils/ttsAudiobookExport';
 import type { TtsPreset, TtsChunk } from '../types';
 import { getBookContent, saveBookReaderState } from '../utils/bookContentStorage';
 import { buildConversationKey, persistConversationBucket, readConversationBucket } from '../utils/readerChatRuntime';
+import { getImageBlobByRef, isImageRef } from '../utils/imageStorage';
 import ReaderMessagePanel from './ReaderMessagePanel';
 import ResolvedImage from './ResolvedImage';
 
@@ -149,6 +150,7 @@ const FLOATING_PANEL_TRANSITION_MS = 220;
 const HIGHIGHTER_CLICK_DELAY_MS = 220;
 const TYPOGRAPHY_COLOR_EDITOR_TRANSITION_MS = 180;
 const READER_APPEARANCE_STORAGE_KEY = 'app_reader_appearance';
+const READER_IMAGE_DIMENSION_CACHE_STORAGE_KEY = 'app_reader_image_dimension_cache_v1';
 const DEFAULT_HIGHLIGHT_COLOR = '#FFE066';
 const PRESET_HIGHLIGHT_COLORS = ['#FFE066', '#FFD6A5', '#FFADAD', '#C7F9CC', '#A0C4FF', '#D7B5FF'];
 const PRESET_TEXT_COLORS = ['#1E293B', '#334155', '#475569', '#0F172A', '#9F1239', '#164E63'];
@@ -157,6 +159,16 @@ const SYSTEM_READER_FONT_ID = 'reader-font-system-default';
 const SERIF_READER_FONT_ID = 'reader-font-serif-default';
 const DEFAULT_READER_FONT_ID = SYSTEM_READER_FONT_ID;
 const BOOKMARK_NAME_MAX_LENGTH = 40;
+const RESTORE_LAYOUT_MIN_STABLE_TEXT_ONLY_MS = 420;
+const RESTORE_LAYOUT_MIN_STABLE_WITH_MEDIA_MS = 900;
+const RESTORE_TARGET_STABLE_PASSES_TEXT_ONLY = 2;
+const RESTORE_TARGET_STABLE_PASSES_WITH_MEDIA = 3;
+const RESTORE_SCROLL_HEIGHT_STABLE_PASSES_TEXT_ONLY = 2;
+const RESTORE_SCROLL_HEIGHT_STABLE_PASSES_WITH_MEDIA = 4;
+const RESTORE_MEDIA_SETTLE_DELAY_WITH_MEDIA_MS = 110;
+const RESTORE_RETRY_INTERVAL_MS = 60;
+const RESTORE_HARD_TIMEOUT_MS = 6200;
+const RESTORE_MASK_VISUAL_READY_MAX_WAIT_MS = 2800;
 const READER_TEXT_ALIGN_OPTIONS: Array<{ value: ReaderTextAlign; label: string; icon: React.ComponentType<{ size?: number }> }> = [
   { value: 'left', label: '\u5c45\u5de6', icon: AlignLeft },
   { value: 'center', label: '\u5c45\u4e2d', icon: AlignCenter },
@@ -192,6 +204,38 @@ const DEFAULT_READER_FONT_OPTIONS: ReaderFontOption[] = [
   },
 ];
 const BUILTIN_READER_FONT_ID_SET = new Set(DEFAULT_READER_FONT_OPTIONS.map((option) => option.id));
+const IMAGE_DIMENSION_CACHE = new Map<string, { width: number; height: number }>();
+const MAX_IMAGE_DIMENSION_CACHE_ENTRIES = 2000;
+
+const hydrateImageDimensionCacheFromStorage = () => {
+  try {
+    const raw = localStorage.getItem(READER_IMAGE_DIMENSION_CACHE_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, { width?: unknown; height?: unknown }>;
+    if (!parsed || typeof parsed !== 'object') return;
+    Object.entries(parsed).forEach(([key, value]) => {
+      if (!key) return;
+      const width = Number(value?.width);
+      const height = Number(value?.height);
+      if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+      if (width <= 0 || height <= 0) return;
+      IMAGE_DIMENSION_CACHE.set(key, { width: Math.round(width), height: Math.round(height) });
+    });
+  } catch {
+    // Ignore malformed cache payload.
+  }
+};
+
+const persistImageDimensionCacheToStorage = () => {
+  try {
+    const entries = Array.from(IMAGE_DIMENSION_CACHE.entries());
+    const trimmed = entries.slice(Math.max(0, entries.length - MAX_IMAGE_DIMENSION_CACHE_ENTRIES));
+    const payload = Object.fromEntries(trimmed);
+    localStorage.setItem(READER_IMAGE_DIMENSION_CACHE_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore quota/storage write failures.
+  }
+};
 
 const isSameHexColor = (left: string, right: string) => left.trim().toUpperCase() === right.trim().toUpperCase();
 
@@ -976,6 +1020,9 @@ const Reader: React.FC<ReaderProps> = ({
   const [isReaderAppearanceHydrated, setIsReaderAppearanceHydrated] = useState(false);
   const [isMoreSettingsOpen, setIsMoreSettingsOpen] = useState(false);
   const [floatingPanelTopPx, setFloatingPanelTopPx] = useState(() => Math.max(0, safeAreaTop) + 72);
+  const [, setImageDimensionTick] = useState(0);
+  const [settledChapterImageKeys, setSettledChapterImageKeys] = useState<Set<string>>(new Set());
+  const [isLoadingMaskVisible, setIsLoadingMaskVisible] = useState(true);
 
   // TTS State
   const [ttsPlaybackState, setTtsPlaybackState] = useState<TtsPlaybackState | null>(null);
@@ -1020,6 +1067,7 @@ const Reader: React.FC<ReaderProps> = ({
   const highlighterClickTimerRef = useRef<number | null>(null);
   const fontObjectUrlsRef = useRef<string[]>([]);
   const fontLinkNodesRef = useRef<HTMLLinkElement[]>([]);
+  const fontCssLoadPromiseByUrlRef = useRef<Map<string, Promise<void>>>(new Map());
   const highlightDragRef = useRef<{ active: boolean; pointerId: number | null; startIndex: number | null }>({
     active: false,
     pointerId: null,
@@ -1032,7 +1080,19 @@ const Reader: React.FC<ReaderProps> = ({
   });
   const touchPointerDragActiveRef = useRef(false);
   const pendingRestorePositionRef = useRef<ReaderPositionState | null>(null);
+  const pendingRestorePassesRef = useRef(0);
+  const pendingRestoreStablePassesRef = useRef(0);
+  const pendingRestoreScrollHeightStablePassesRef = useRef(0);
+  const pendingRestoreLastScrollHeightRef = useRef<number | null>(null);
+  const pendingRestoreStartedAtRef = useRef(0);
+  const pendingRestoreMediaSettledAtRef = useRef<number | null>(null);
+  const pendingRestoreRetryTimerRef = useRef<number | null>(null);
+  const visualRestoreGuardTimerRef = useRef<number | null>(null);
   const latestReadingPositionRef = useRef<ReaderPositionState | null>(null);
+  const areChapterImagesSettledRef = useRef(true);
+  const programmaticRestoreScrollRef = useRef(false);
+  const [, setIsVisualRestorePending] = useState(false);
+  const [isRestorePositionPending, setIsRestorePositionPending] = useState(false);
 
   const isTocOpen = activeFloatingPanel === 'toc';
   const isHighlighterPanelOpen = activeFloatingPanel === 'highlighter';
@@ -1050,6 +1110,143 @@ const Reader: React.FC<ReaderProps> = ({
     const nextTop = Math.max(0, viewportContainer.getBoundingClientRect().top - root.getBoundingClientRect().top);
     setFloatingPanelTopPx((prev) => (Math.abs(prev - nextTop) < 0.5 ? prev : nextTop));
   }, []);
+
+  const clearPendingRestorePosition = () => {
+    pendingRestorePositionRef.current = null;
+    pendingRestorePassesRef.current = 0;
+    pendingRestoreStablePassesRef.current = 0;
+    pendingRestoreScrollHeightStablePassesRef.current = 0;
+    pendingRestoreLastScrollHeightRef.current = null;
+    pendingRestoreStartedAtRef.current = 0;
+    pendingRestoreMediaSettledAtRef.current = null;
+    if (pendingRestoreRetryTimerRef.current) {
+      window.clearTimeout(pendingRestoreRetryTimerRef.current);
+      pendingRestoreRetryTimerRef.current = null;
+    }
+    if (visualRestoreGuardTimerRef.current) {
+      window.clearTimeout(visualRestoreGuardTimerRef.current);
+      visualRestoreGuardTimerRef.current = null;
+    }
+    setIsVisualRestorePending(false);
+    setIsRestorePositionPending(false);
+  };
+
+  const queuePendingRestorePosition = (
+    position: ReaderPositionState | null,
+    passes = 6,
+    options?: { hideDuringRestore?: boolean }
+  ) => {
+    if (!position) {
+      clearPendingRestorePosition();
+      return;
+    }
+    pendingRestorePositionRef.current = position;
+    pendingRestorePassesRef.current = Math.max(1, Math.floor(passes));
+    pendingRestoreStablePassesRef.current = 0;
+    pendingRestoreScrollHeightStablePassesRef.current = 0;
+    pendingRestoreLastScrollHeightRef.current = null;
+    pendingRestoreStartedAtRef.current = Date.now();
+    pendingRestoreMediaSettledAtRef.current = null;
+    const shouldHide = Boolean(options?.hideDuringRestore);
+    setIsVisualRestorePending(shouldHide);
+    setIsRestorePositionPending(true);
+    if (visualRestoreGuardTimerRef.current) {
+      window.clearTimeout(visualRestoreGuardTimerRef.current);
+      visualRestoreGuardTimerRef.current = null;
+    }
+    if (shouldHide) {
+      visualRestoreGuardTimerRef.current = window.setTimeout(() => {
+        visualRestoreGuardTimerRef.current = null;
+        setIsVisualRestorePending(false);
+      }, 900);
+    }
+  };
+
+  const resolveRestoreTargetRatio = (position: ReaderPositionState, chapterLength: number) => {
+    const ratioFromOffset = chapterLength > 0 ? position.chapterCharOffset / chapterLength : 0;
+    return clamp(position.scrollRatio > 0 ? position.scrollRatio : ratioFromOffset, 0, 1);
+  };
+
+  const loadImageDimensionsFromUrl = (url: string): Promise<{ width: number; height: number } | null> =>
+    new Promise((resolve) => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.onload = () => {
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        if (!width || !height) {
+          resolve(null);
+          return;
+        }
+        resolve({ width, height });
+      };
+      image.onerror = () => resolve(null);
+      image.src = url;
+    });
+
+  const resolveImageDimensions = async (source: string): Promise<{ width: number; height: number } | null> => {
+    const cached = IMAGE_DIMENSION_CACHE.get(source);
+    if (cached) return cached;
+
+    if (isImageRef(source)) {
+      const blob = await getImageBlobByRef(source).catch(() => null);
+      if (!blob) return null;
+
+      if (typeof createImageBitmap === 'function') {
+        try {
+          const bitmap = await createImageBitmap(blob);
+          const width = bitmap.width;
+          const height = bitmap.height;
+          bitmap.close();
+          if (width > 0 && height > 0) {
+            const dims = { width, height };
+            IMAGE_DIMENSION_CACHE.set(source, dims);
+            return dims;
+          }
+        } catch {
+          // Fallback to object URL path below.
+        }
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      try {
+        const dims = await loadImageDimensionsFromUrl(objectUrl);
+        if (dims) {
+          IMAGE_DIMENSION_CACHE.set(source, dims);
+        }
+        return dims;
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
+    const dims = await loadImageDimensionsFromUrl(source);
+    if (dims) {
+      IMAGE_DIMENSION_CACHE.set(source, dims);
+    }
+    return dims;
+  };
+
+  const isRestoreMediaLayoutSettled = () => {
+    const article = readerArticleRef.current;
+    if (!article) return true;
+
+    const figures = Array.from(article.querySelectorAll('figure'));
+    if (figures.length === 0) return true;
+
+    const images = Array.from(article.querySelectorAll('img')) as HTMLImageElement[];
+    if (images.length < figures.length) return false;
+    return images.every((image) => image.complete);
+  };
+
+  const isReaderVisualContentReady = () => {
+    const article = readerArticleRef.current;
+    if (!article) return false;
+
+    if ((article.textContent || '').trim().length > 0) return true;
+    const images = Array.from(article.querySelectorAll('img')) as HTMLImageElement[];
+    return images.some((image) => image.complete && (image.naturalWidth > 0 || image.width > 0));
+  };
 
   const resolveClosestBookmarkIdFromList = (source: ReaderBookmark[], targetOffset: number) => {
     if (source.length === 0) return null;
@@ -1192,18 +1389,92 @@ const Reader: React.FC<ReaderProps> = ({
     const pending = pendingRestorePositionRef.current;
     const scroller = readerScrollRef.current;
     if (!pending || !scroller || isLoadingBookContent) return false;
+    if (!isReaderAppearanceHydrated) return false;
+    const hasChapterMedia =
+      currentChapterImageSignature.length > 0 ||
+      Boolean(readerArticleRef.current?.querySelector('figure'));
+    const minStableMs = hasChapterMedia
+      ? RESTORE_LAYOUT_MIN_STABLE_WITH_MEDIA_MS
+      : RESTORE_LAYOUT_MIN_STABLE_TEXT_ONLY_MS;
+    const requiredStablePasses = hasChapterMedia
+      ? RESTORE_TARGET_STABLE_PASSES_WITH_MEDIA
+      : RESTORE_TARGET_STABLE_PASSES_TEXT_ONLY;
+    const requiredScrollHeightStablePasses = hasChapterMedia
+      ? RESTORE_SCROLL_HEIGHT_STABLE_PASSES_WITH_MEDIA
+      : RESTORE_SCROLL_HEIGHT_STABLE_PASSES_TEXT_ONLY;
+    const mediaSettleDelayMs = hasChapterMedia ? RESTORE_MEDIA_SETTLE_DELAY_WITH_MEDIA_MS : 0;
+    const elapsedMs = Date.now() - pendingRestoreStartedAtRef.current;
+    const hardTimeoutReached = elapsedMs >= RESTORE_HARD_TIMEOUT_MS;
+    if (pendingRestorePassesRef.current <= 0) {
+      clearPendingRestorePosition();
+      return false;
+    }
 
     const chapterLength = bookText.length;
-    const ratioFromOffset = chapterLength > 0 ? pending.chapterCharOffset / chapterLength : 0;
-    const targetRatio = clamp(pending.scrollRatio > 0 ? pending.scrollRatio : ratioFromOffset, 0, 1);
+    const targetRatio = resolveRestoreTargetRatio(pending, chapterLength);
     const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const needsScrollableArea = targetRatio > 0.002;
+    if (needsScrollableArea && maxScrollTop <= 1) {
+      pendingRestorePassesRef.current = Math.max(0, pendingRestorePassesRef.current - 1);
+      if (pendingRestorePassesRef.current <= 0 || hardTimeoutReached) {
+        clearPendingRestorePosition();
+      }
+      return false;
+    }
     const nextScrollTop = maxScrollTop > 0 ? maxScrollTop * targetRatio : 0;
-
+    programmaticRestoreScrollRef.current = true;
     scroller.scrollTop = nextScrollTop;
+    window.requestAnimationFrame(() => {
+      programmaticRestoreScrollRef.current = false;
+    });
     lastReaderScrollTopRef.current = nextScrollTop;
     refreshReaderScrollbar();
-    syncReadingPositionRef(Date.now());
-    pendingRestorePositionRef.current = null;
+    const snapshot = syncReadingPositionRef(Date.now());
+    const resolvedRatio = snapshot?.scrollRatio ?? 0;
+    const ratioGap = Math.abs(resolvedRatio - targetRatio);
+
+    pendingRestorePassesRef.current = Math.max(0, pendingRestorePassesRef.current - 1);
+    if (!needsScrollableArea || ratioGap <= 0.002) {
+      pendingRestoreStablePassesRef.current += 1;
+    } else {
+      pendingRestoreStablePassesRef.current = 0;
+    }
+
+    const currentScrollHeight = scroller.scrollHeight;
+    const lastScrollHeight = pendingRestoreLastScrollHeightRef.current;
+    if (lastScrollHeight === null || Math.abs(lastScrollHeight - currentScrollHeight) > 0.5) {
+      pendingRestoreScrollHeightStablePassesRef.current = 0;
+      pendingRestoreLastScrollHeightRef.current = currentScrollHeight;
+    } else {
+      pendingRestoreScrollHeightStablePassesRef.current += 1;
+    }
+    const scrollHeightStable =
+      pendingRestoreScrollHeightStablePassesRef.current >= requiredScrollHeightStablePasses;
+
+    const mediaSettled = isRestoreMediaLayoutSettled();
+    if (mediaSettled) {
+      if (pendingRestoreMediaSettledAtRef.current === null) {
+        pendingRestoreMediaSettledAtRef.current = Date.now();
+      }
+    } else {
+      pendingRestoreMediaSettledAtRef.current = null;
+    }
+    const mediaSettleDelayElapsed =
+      mediaSettleDelayMs <= 0 ||
+      pendingRestoreMediaSettledAtRef.current === null ||
+      Date.now() - pendingRestoreMediaSettledAtRef.current >= mediaSettleDelayMs;
+    const mediaGateReady = mediaSettled && areChapterImagesSettledRef.current;
+
+    const reachedStableWindow =
+      !needsScrollableArea ||
+      (pendingRestoreStablePassesRef.current >= requiredStablePasses && elapsedMs >= minStableMs);
+    if (
+      (reachedStableWindow && mediaGateReady && mediaSettleDelayElapsed && scrollHeightStable) ||
+      pendingRestorePassesRef.current <= 0 ||
+      hardTimeoutReached
+    ) {
+      clearPendingRestorePosition();
+    }
     return true;
   };
 
@@ -1475,7 +1746,7 @@ const Reader: React.FC<ReaderProps> = ({
         setIsReaderStateHydrated(false);
         setHydratedBookId(null);
         hideFloatingPanelImmediately();
-        pendingRestorePositionRef.current = null;
+        clearPendingRestorePosition();
         latestReadingPositionRef.current = null;
         setIsLoadingBookContent(false);
         return;
@@ -1564,7 +1835,7 @@ const Reader: React.FC<ReaderProps> = ({
           const globalCharOffset = clamp(chapterStartOffset + nextChapterOffset, 0, totalLength);
           const derivedRatio = chapterLength > 0 ? nextChapterOffset / chapterLength : 0;
           const normalizedRatio = persistedPosition.scrollRatio > 0 ? persistedPosition.scrollRatio : derivedRatio;
-          pendingRestorePositionRef.current = {
+          const restoredPosition: ReaderPositionState = {
             chapterIndex: nextChapterIndex,
             chapterCharOffset: nextChapterOffset,
             globalCharOffset,
@@ -1572,10 +1843,11 @@ const Reader: React.FC<ReaderProps> = ({
             totalLength,
             updatedAt: persistedPosition.updatedAt,
           };
-          latestReadingPositionRef.current = pendingRestorePositionRef.current;
+          queuePendingRestorePosition(restoredPosition, 28, { hideDuringRestore: true });
+          latestReadingPositionRef.current = restoredPosition;
           setSelectedBookmarkId(resolveClosestBookmarkIdFromList(persistedBookmarks, globalCharOffset));
         } else {
-          pendingRestorePositionRef.current = null;
+          clearPendingRestorePosition();
           latestReadingPositionRef.current = null;
           setSelectedBookmarkId(resolveClosestBookmarkIdFromList(persistedBookmarks, 0));
         }
@@ -1597,7 +1869,7 @@ const Reader: React.FC<ReaderProps> = ({
           setFontUrlInput('');
           setFontFamilyInput('');
           hideFloatingPanelImmediately();
-          pendingRestorePositionRef.current = null;
+          clearPendingRestorePosition();
           latestReadingPositionRef.current = null;
           setBookText(activeBook.fullText || '');
         }
@@ -1628,7 +1900,56 @@ const Reader: React.FC<ReaderProps> = ({
 
   useLayoutEffect(() => {
     applyPendingRestorePosition();
-  }, [activeBook?.id, isLoadingBookContent, bookText]);
+  }, [
+    activeBook?.id,
+    isLoadingBookContent,
+    bookText,
+    isReaderAppearanceHydrated,
+    selectedReaderFontId,
+    readerTypography.fontSizePx,
+    readerTypography.lineHeight,
+  ]);
+
+  useEffect(() => {
+    if (!pendingRestorePositionRef.current) return;
+    if (isLoadingBookContent) return;
+
+    let cancelled = false;
+    const runStabilizedRestore = () => {
+      if (cancelled) return;
+      applyPendingRestorePosition();
+      if (!pendingRestorePositionRef.current) return;
+      if (pendingRestoreRetryTimerRef.current) {
+        window.clearTimeout(pendingRestoreRetryTimerRef.current);
+      }
+      pendingRestoreRetryTimerRef.current = window.setTimeout(() => {
+        window.requestAnimationFrame(() => runStabilizedRestore());
+      }, RESTORE_RETRY_INTERVAL_MS);
+    };
+
+    runStabilizedRestore();
+    const fontSet = document.fonts;
+    fontSet.ready.then(() => {
+      if (cancelled || !pendingRestorePositionRef.current) return;
+      window.requestAnimationFrame(() => runStabilizedRestore());
+    });
+
+    return () => {
+      cancelled = true;
+      if (pendingRestoreRetryTimerRef.current) {
+        window.clearTimeout(pendingRestoreRetryTimerRef.current);
+        pendingRestoreRetryTimerRef.current = null;
+      }
+    };
+  }, [
+    activeBook?.id,
+    isLoadingBookContent,
+    bookText,
+    isReaderAppearanceHydrated,
+    selectedReaderFontId,
+    readerTypography.fontSizePx,
+    readerTypography.lineHeight,
+  ]);
 
   useLayoutEffect(() => {
     syncFloatingPanelTop();
@@ -1753,12 +2074,20 @@ const Reader: React.FC<ReaderProps> = ({
       if (highlighterClickTimerRef.current) {
         window.clearTimeout(highlighterClickTimerRef.current);
       }
+      if (pendingRestoreRetryTimerRef.current) {
+        window.clearTimeout(pendingRestoreRetryTimerRef.current);
+        pendingRestoreRetryTimerRef.current = null;
+      }
+      if (visualRestoreGuardTimerRef.current) {
+        window.clearTimeout(visualRestoreGuardTimerRef.current);
+        visualRestoreGuardTimerRef.current = null;
+      }
       fontObjectUrlsRef.current.forEach(url => {
         URL.revokeObjectURL(url);
       });
       fontObjectUrlsRef.current = [];
-      fontLinkNodesRef.current.forEach(node => node.remove());
       fontLinkNodesRef.current = [];
+      fontCssLoadPromiseByUrlRef.current.clear();
       // TTS cleanup on unmount
       ttsControllerRef.current?.destroy();
       ttsControllerRef.current = null;
@@ -2017,6 +2346,129 @@ const Reader: React.FC<ReaderProps> = ({
     };
   }, [bookText, currentChapterBlocks, currentChapterTitle]);
 
+  const currentChapterImageItems = useMemo(
+    () => renderItems.filter((item): item is ReaderRenderImageItem => item.type === 'image'),
+    [renderItems]
+  );
+  const currentChapterImageKeys = useMemo(
+    () => currentChapterImageItems.map((item) => item.key),
+    [currentChapterImageItems]
+  );
+  const currentChapterImageSignature = useMemo(
+    () => currentChapterImageKeys.join('|'),
+    [currentChapterImageKeys]
+  );
+  const areChapterImagesSettled = useMemo(() => {
+    if (currentChapterImageKeys.length === 0) return true;
+    return currentChapterImageKeys.every((key) => settledChapterImageKeys.has(key));
+  }, [currentChapterImageKeys, settledChapterImageKeys]);
+
+  useEffect(() => {
+    areChapterImagesSettledRef.current = areChapterImagesSettled;
+  }, [areChapterImagesSettled]);
+
+  const markChapterImageSettled = useCallback((imageKey: string) => {
+    setSettledChapterImageKeys((prev) => {
+      if (prev.has(imageKey)) return prev;
+      const next = new Set(prev);
+      next.add(imageKey);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    setSettledChapterImageKeys(new Set());
+  }, [activeBook?.id, selectedChapterIndex, currentChapterImageSignature]);
+
+  useEffect(() => {
+    if (!activeBook) {
+      setIsLoadingMaskVisible(false);
+      return;
+    }
+
+    if (isLoadingBookContent || isRestorePositionPending || !areChapterImagesSettled) {
+      setIsLoadingMaskVisible(true);
+      return;
+    }
+
+    let cancelled = false;
+    const startedAt = Date.now();
+    const maxWaitMs = RESTORE_MASK_VISUAL_READY_MAX_WAIT_MS;
+
+    const settleMaskVisibility = () => {
+      if (cancelled) return;
+      const isReady = isReaderVisualContentReady();
+      const timedOut = Date.now() - startedAt >= maxWaitMs;
+      if (isReady || timedOut) {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            if (!cancelled) {
+              setIsLoadingMaskVisible(false);
+            }
+          });
+        });
+        return;
+      }
+      window.requestAnimationFrame(settleMaskVisibility);
+    };
+
+    settleMaskVisibility();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeBook?.id,
+    selectedChapterIndex,
+    currentChapterImageSignature,
+    isLoadingBookContent,
+    isRestorePositionPending,
+    areChapterImagesSettled,
+  ]);
+
+  useEffect(() => {
+    if (currentChapterImageItems.length === 0) return;
+    let cancelled = false;
+
+    const pendingSources: string[] = Array.from(
+      new Set(
+        currentChapterImageItems
+          .map((item) => {
+            if (item.width && item.height && item.width > 0 && item.height > 0) {
+              IMAGE_DIMENSION_CACHE.set(item.imageRef, { width: item.width, height: item.height });
+              return '';
+            }
+            return IMAGE_DIMENSION_CACHE.has(item.imageRef) ? '' : item.imageRef;
+          })
+          .filter((source): source is string => Boolean(source))
+      )
+    );
+    if (pendingSources.length === 0) return;
+
+    (async () => {
+      let hasNewDimensions = false;
+      for (const source of pendingSources) {
+        const before = IMAGE_DIMENSION_CACHE.has(source);
+        await resolveImageDimensions(source);
+        if (!before && IMAGE_DIMENSION_CACHE.has(source)) {
+          hasNewDimensions = true;
+        }
+      }
+      if (!cancelled && hasNewDimensions) {
+        persistImageDimensionCacheToStorage();
+        setImageDimensionTick((prev) => prev + 1);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBook?.id, selectedChapterIndex, currentChapterImageItems]);
+
+  useEffect(() => {
+    hydrateImageDimensionCacheFromStorage();
+    setImageDimensionTick((prev) => prev + 1);
+  }, []);
+
   const chapterNormalizedLengths = useMemo(
     () => chapters.map((chapter) => normalizeReaderLayoutText(chapter.content || '').length),
     [chapters]
@@ -2086,6 +2538,7 @@ const Reader: React.FC<ReaderProps> = ({
 
   useEffect(() => {
     if (!activeBook?.id || !isReaderStateHydrated || hydratedBookId !== activeBook.id) return;
+    if (isRestorePositionPending || !areChapterImagesSettled) return;
     if (persistReaderStateTimerRef.current) {
       window.clearTimeout(persistReaderStateTimerRef.current);
     }
@@ -2116,6 +2569,8 @@ const Reader: React.FC<ReaderProps> = ({
     highlightColor,
     highlightRangesByChapter,
     sortedBookmarks,
+    isRestorePositionPending,
+    areChapterImagesSettled,
   ]);
 
   useEffect(() => {
@@ -2215,7 +2670,7 @@ const Reader: React.FC<ReaderProps> = ({
 
   const jumpToReadingPosition = (position: ReaderPositionState) => {
     const resolved = resolveReadingTargetFromPosition(position);
-    pendingRestorePositionRef.current = resolved.normalizedPosition;
+    queuePendingRestorePosition(resolved.normalizedPosition, 28, { hideDuringRestore: false });
     latestReadingPositionRef.current = resolved.normalizedPosition;
 
     const shouldUpdateChapter = resolved.nextChapterIndex !== selectedChapterIndex;
@@ -2297,6 +2752,7 @@ const Reader: React.FC<ReaderProps> = ({
     const currTop = target.scrollTop;
     lastReaderScrollTopRef.current = currTop;
     syncReadingPositionRef(Date.now());
+    if (programmaticRestoreScrollRef.current) return;
 
     const { nearTop, nearBottom, noScrollableContent } = canTriggerBoundarySwitch(target);
     const isScrollingDown = currTop > prevTop + 0.5;
@@ -3458,29 +3914,98 @@ const Reader: React.FC<ReaderProps> = ({
     document.fonts.add(loaded);
   };
 
+  const waitForStylesheetReady = (link: HTMLLinkElement, url: string) => {
+    const cached = fontCssLoadPromiseByUrlRef.current.get(url);
+    if (cached) return cached;
+
+    const pending = new Promise<void>((resolve) => {
+      if (link.dataset.readerFontLoaded === '1') {
+        resolve();
+        return;
+      }
+
+      let settled = false;
+      let timeoutId: number | null = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        link.dataset.readerFontLoaded = '1';
+        link.removeEventListener('load', finish);
+        link.removeEventListener('error', finish);
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+        }
+        resolve();
+      };
+
+      link.addEventListener('load', finish);
+      link.addEventListener('error', finish);
+
+      // If stylesheet is already attached and parsed, resolve immediately.
+      if (link.sheet) {
+        finish();
+        return;
+      }
+
+      timeoutId = window.setTimeout(finish, 1800);
+    });
+
+    fontCssLoadPromiseByUrlRef.current.set(url, pending);
+    return pending;
+  };
+
+  const warmUpReaderFontFamily = async (family: string, timeoutMs = 1200) => {
+    const primaryFamily = normalizeStoredFontFamily(family);
+    if (!primaryFamily) return;
+
+    await Promise.race([
+      document.fonts
+        .load(`16px "${primaryFamily}"`)
+        .then(() => undefined)
+        .catch(() => undefined),
+      new Promise<void>((resolve) => {
+        window.setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  };
+
   const ensureReaderFontResource = async (option: ReaderFontOption) => {
     if (option.sourceType === 'default' || !option.sourceUrl) return;
 
     if (option.sourceType === 'css') {
-      const existingFromRef = fontLinkNodesRef.current.find(node => node.href === option.sourceUrl);
-      if (existingFromRef) return;
+      const url = option.sourceUrl;
+      const existingFromRef = fontLinkNodesRef.current.find(node => node.href === url);
+      if (existingFromRef) {
+        await waitForStylesheetReady(existingFromRef, url);
+        await warmUpReaderFontFamily(option.family);
+        return;
+      }
       const existingInDocument = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')).find(
-        node => node.href === option.sourceUrl
+        node => node.href === url
       );
-      if (existingInDocument) return;
+      if (existingInDocument) {
+        fontLinkNodesRef.current.push(existingInDocument);
+        await waitForStylesheetReady(existingInDocument, url);
+        await warmUpReaderFontFamily(option.family);
+        return;
+      }
 
       const link = document.createElement('link');
       link.rel = 'stylesheet';
-      link.href = option.sourceUrl;
+      link.href = url;
       link.dataset.readerFont = '1';
       document.head.appendChild(link);
       fontLinkNodesRef.current.push(link);
+      await waitForStylesheetReady(link, url);
+      await warmUpReaderFontFamily(option.family);
       return;
     }
 
     const fontFamilyName = normalizeStoredFontFamily(option.family) || sanitizeFontFamily(option.label);
     if (!fontFamilyName) return;
+    if (document.fonts.check(`16px "${fontFamilyName}"`)) return;
     await registerFontFaceFromSource(fontFamilyName, option.sourceUrl);
+    await warmUpReaderFontFamily(fontFamilyName);
   };
 
   const handleApplyFontUrl = async () => {
@@ -3621,8 +4146,8 @@ const Reader: React.FC<ReaderProps> = ({
     color: readerTypography.textColor,
     fontFamily: selectedReaderFontFamily,
     fontKerning: 'normal',
-    fontVariantEastAsian: 'proportional-width',
-    fontFeatureSettings: '"kern" 1, "liga" 1, "palt" 1',
+    fontVariantEastAsian: 'normal',
+    fontFeatureSettings: '"kern" 1, "liga" 1',
     textAlign: readerTypography.textAlign,
     ['--tw-prose-body' as string]: readerTypography.textColor,
     ['--tw-prose-headings' as string]: readerTypography.textColor,
@@ -4275,7 +4800,8 @@ const Reader: React.FC<ReaderProps> = ({
       <div ref={readerViewportContainerRef} className="relative flex-1 min-h-0 m-4 mt-0">
         <div
           ref={readerScrollRef}
-          className={`reader-scroll-panel reader-content-scroll h-full min-h-0 overflow-y-auto rounded-2xl shadow-inner transition-colors px-6 py-6 pb-24 ${
+          aria-busy={isLoadingMaskVisible}
+          className={`reader-scroll-panel reader-content-scroll relative h-full min-h-0 overflow-y-auto rounded-2xl shadow-inner transition-colors px-6 py-6 pb-24 ${
             isDarkMode ? 'bg-[#1a202c] shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]' : 'bg-[#f0f2f5] shadow-[inset_4px_4px_8px_#d1d9e6,inset_-4px_-4px_8px_#ffffff]'
           }`}
           style={readerScrollStyle}
@@ -4287,7 +4813,7 @@ const Reader: React.FC<ReaderProps> = ({
         >
           <article
             ref={readerArticleRef}
-            className={`prose prose-lg max-w-none font-serif leading-loose ${chapterTransitionClass} ${isDarkMode ? 'prose-invert' : ''} ${isHighlightMode ? 'cursor-crosshair' : ''}`}
+            className={`prose prose-lg max-w-none font-serif leading-loose ${chapterTransitionClass} ${isDarkMode ? 'prose-invert' : ''} ${isHighlightMode ? 'cursor-crosshair' : ''} ${isLoadingMaskVisible ? 'opacity-0 pointer-events-none select-none' : ''}`}
             style={readerArticleStyle}
             onPointerDown={handleReaderTextPointerDown}
             onPointerMove={handleReaderTextPointerMove}
@@ -4299,7 +4825,6 @@ const Reader: React.FC<ReaderProps> = ({
             onTouchCancel={handleReaderTextTouchCancel}
           >
             {!activeBook && <p className="mb-6 indent-8 opacity-70">{'\u672a\u9009\u62e9\u4e66\u7c4d\uff0c\u8bf7\u8fd4\u56de\u4e66\u67b6\u9009\u62e9\u4e00\u672c\u4e66\u3002'}</p>}
-            {activeBook && isLoadingBookContent && <p className="mb-6 indent-8 opacity-70">{'\u6b63\u5728\u52a0\u8f7d\u6b63\u6587\u5185\u5bb9...'}</p>}
             {activeBook && !isLoadingBookContent && renderItems.length === 0 && (
               <p className="mb-6 indent-8 opacity-70">{'\u8fd9\u672c\u4e66\u8fd8\u6ca1\u6709\u6b63\u6587\u5185\u5bb9\u3002'}</p>
             )}
@@ -4377,12 +4902,24 @@ const Reader: React.FC<ReaderProps> = ({
             })()}
             {activeBook && !isLoadingBookContent && renderItems.map((item) => {
               if (item.type === 'image') {
+                const cachedDimensions = IMAGE_DIMENSION_CACHE.get(item.imageRef);
+                const resolvedWidth =
+                  typeof item.width === 'number' && item.width > 0
+                    ? Math.round(item.width)
+                    : cachedDimensions?.width;
+                const resolvedHeight =
+                  typeof item.height === 'number' && item.height > 0
+                    ? Math.round(item.height)
+                    : cachedDimensions?.height;
                 return (
                   <figure key={item.key} className="mb-6 not-prose">
                     <div className={`w-full rounded-xl p-1.5 overflow-hidden ${isDarkMode ? 'bg-slate-900/30' : 'bg-white/60'}`}>
                       <ResolvedImage
                         src={item.imageRef}
                         alt={item.alt || item.title || 'Embedded image'}
+                        width={resolvedWidth}
+                        height={resolvedHeight}
+                        onResolved={() => markChapterImageSettled(item.key)}
                         className="w-full h-auto max-h-[60vh] object-contain rounded-lg mx-auto"
                       />
                     </div>
@@ -4493,7 +5030,19 @@ const Reader: React.FC<ReaderProps> = ({
               );
             })}
           </article>
+
         </div>
+
+        {activeBook && isLoadingMaskVisible && (
+          <div
+            className={`pointer-events-none absolute left-6 top-6 z-20 text-sm opacity-70 ${
+              isDarkMode ? 'text-slate-400' : 'text-slate-500'
+            }`}
+            aria-hidden="true"
+          >
+            {'\u6b63\u5728\u52a0\u8f7d\u6b63\u6587\u5185\u5bb9...'}
+          </div>
+        )}
 
         {readerScrollbar.visible && (
           <div ref={readerScrollbarTrackRef} className="absolute right-1.5 top-3 bottom-3 w-1 z-10 pointer-events-none overflow-hidden rounded-full">
@@ -4544,6 +5093,7 @@ const Reader: React.FC<ReaderProps> = ({
         worldBookEntries={worldBookEntries}
         chapters={chapters}
         bookText={bookText}
+        activeChapterRenderedText={readerTextForHighlighting}
         highlightRangesByChapter={highlightRangesByChapter}
         onAddAiUnderlineRange={handleAddAiUnderlineRange}
         onRollbackAiUnderlineGeneration={handleRollbackAiUnderlineGeneration}

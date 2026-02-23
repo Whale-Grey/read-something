@@ -26,6 +26,7 @@ export const BOOK_IMPORT_ACCEPT = SUPPORTED_SUFFIXES.map((suffix) => `.${suffix}
 export const SUPPORTED_BOOK_IMPORT_SUFFIXES = [...SUPPORTED_SUFFIXES];
 
 const UTF8_DECODER = new TextDecoder('utf-8');
+const TXT_FALLBACK_ENCODINGS = ['utf-8', 'utf-16le', 'utf-16be', 'gb18030', 'gbk'] as const;
 const BLOCK_TAGS = new Set([
   'article',
   'aside',
@@ -101,6 +102,8 @@ interface HtmlTokenImage {
   src: string;
   alt?: string;
   title?: string;
+  width?: number;
+  height?: number;
 }
 
 interface HtmlTokenAnchor {
@@ -122,6 +125,24 @@ const getFileSuffix = (name: string) => {
 
 const compactWhitespace = (value: string) => value.replace(/[ \t\u00A0]+/g, ' ').trim();
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const parsePositiveImageDimension = (value: string | null) => {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized.includes('%') || normalized.includes('em') || normalized.includes('rem') || normalized === 'auto') {
+    return undefined;
+  }
+  const numeric = Number.parseFloat(normalized.replace(/px$/i, ''));
+  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+  return Math.round(numeric);
+};
+
+const parseImageDimensionFromStyle = (styleValue: string | null, kind: 'width' | 'height') => {
+  if (!styleValue) return undefined;
+  const pattern = kind === 'width' ? /(?:^|;)\s*width\s*:\s*([^;]+)/i : /(?:^|;)\s*height\s*:\s*([^;]+)/i;
+  const matched = styleValue.match(pattern);
+  return parsePositiveImageDimension(matched?.[1] || null);
+};
 const LATIN_APOSTROPHE_NORMALIZE_REGEX = /([A-Za-z0-9])[\u2018\u2019\u02BC]([A-Za-z0-9])/g;
 const LATIN_OPEN_QUOTE_NORMALIZE_REGEX = /(^|[\s([{<])[\u201C\u201D]([A-Za-z0-9])/g;
 const LATIN_CLOSE_QUOTE_NORMALIZE_REGEX = /([A-Za-z0-9])[\u201C\u201D](?=($|[\s)\]}>.,!?;:]))/g;
@@ -148,6 +169,76 @@ const normalizeTextBlock = (raw: string) => {
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n');
   return normalized.trim();
+};
+
+const decodeTextBuffer = (buffer: ArrayBuffer, encoding: string) => {
+  try {
+    return new TextDecoder(encoding).decode(buffer);
+  } catch {
+    return null;
+  }
+};
+
+const scoreDecodedTextQuality = (text: string) => {
+  let replacementCount = 0;
+  let nullCount = 0;
+  let controlCount = 0;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code === 0xfffd) replacementCount += 1;
+    if (code === 0x0000) {
+      nullCount += 1;
+      continue;
+    }
+    if ((code >= 0x0001 && code <= 0x0008) || (code >= 0x000b && code <= 0x000c) || (code >= 0x000e && code <= 0x001f) || code === 0x007f) {
+      controlCount += 1;
+    }
+  }
+
+  return replacementCount * 1000 + nullCount * 200 + controlCount * 10;
+};
+
+const detectBomEncoding = (bytes: Uint8Array) => {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return 'utf-8';
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return 'utf-16le';
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return 'utf-16be';
+  }
+  return '';
+};
+
+const decodeTxtBufferWithFallback = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+  const bomEncoding = detectBomEncoding(bytes);
+
+  if (bomEncoding) {
+    return decodeTextBuffer(buffer, bomEncoding) ?? UTF8_DECODER.decode(buffer);
+  }
+
+  let bestText: string | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  const attemptedEncodings = new Set<string>();
+
+  for (const encoding of TXT_FALLBACK_ENCODINGS) {
+    if (attemptedEncodings.has(encoding)) continue;
+    attemptedEncodings.add(encoding);
+
+    const decoded = decodeTextBuffer(buffer, encoding);
+    if (decoded === null) continue;
+
+    const score = scoreDecodedTextQuality(decoded);
+    if (score < bestScore) {
+      bestScore = score;
+      bestText = decoded;
+    }
+  }
+
+  return bestText ?? UTF8_DECODER.decode(buffer);
 };
 
 const mergeAdjacentTextBlocks = (blocks: ReaderContentBlock[]) => {
@@ -382,14 +473,28 @@ const collectHtmlTokens = (node: Node, tokens: HtmlToken[]) => {
   }
 
   if (tagName === 'script' || tagName === 'style' || tagName === 'noscript') return;
-  if (tagName === 'img') {
-    const src = element.getAttribute('src') || '';
+  if (tagName === 'img' || tagName === 'image') {
+    const src =
+      element.getAttribute('src') ||
+      element.getAttribute('data-src') ||
+      element.getAttribute('data-original') ||
+      element.getAttribute('href') ||
+      element.getAttribute('xlink:href') ||
+      '';
     if (src.trim()) {
+      const width =
+        parsePositiveImageDimension(element.getAttribute('width')) ||
+        parseImageDimensionFromStyle(element.getAttribute('style'), 'width');
+      const height =
+        parsePositiveImageDimension(element.getAttribute('height')) ||
+        parseImageDimensionFromStyle(element.getAttribute('style'), 'height');
       tokens.push({
         type: 'image',
         src: src.trim(),
         alt: element.getAttribute('alt') || undefined,
         title: element.getAttribute('title') || undefined,
+        ...(width ? { width } : {}),
+        ...(height ? { height } : {}),
       });
     }
     return;
@@ -461,6 +566,8 @@ const materializeHtmlTokens = async (
       imageRef,
       alt: token.alt,
       title: token.title,
+      ...(typeof token.width === 'number' && token.width > 0 ? { width: token.width } : {}),
+      ...(typeof token.height === 'number' && token.height > 0 ? { height: token.height } : {}),
     });
   }
 
@@ -484,7 +591,7 @@ const ensurePdfWorker = () => {
 
 const parseTxtFile = async (file: File) => {
   const buffer = await file.arrayBuffer();
-  const fullText = normalizeTextBlock(UTF8_DECODER.decode(buffer));
+  const fullText = normalizeTextBlock(decodeTxtBufferWithFallback(buffer));
   const title = trimFileExt(file.name);
   return {
     format: 'txt' as const,
@@ -903,8 +1010,48 @@ const resolvePdfImageObjectBlob = async (source: any): Promise<Blob | null> => {
   return null;
 };
 
-const extractPdfPageImageRefs = async (page: any, context: ImportParseContext) => {
-  const imageRefs: string[] = [];
+const resolvePdfImageObjectSize = (source: any): { width: number; height: number } | null => {
+  if (!source) return null;
+  if (
+    typeof source.width === 'number' &&
+    typeof source.height === 'number' &&
+    source.width > 0 &&
+    source.height > 0
+  ) {
+    return { width: Math.round(source.width), height: Math.round(source.height) };
+  }
+  const drawable =
+    source.bitmap && (isImageBitmapLike(source.bitmap) || isCanvasLike(source.bitmap))
+      ? source.bitmap
+      : source;
+  if (isCanvasLike(drawable)) {
+    if (drawable.width > 0 && drawable.height > 0) {
+      return { width: Math.round(drawable.width), height: Math.round(drawable.height) };
+    }
+    return null;
+  }
+  if (isImageLike(drawable)) {
+    const width = drawable.naturalWidth || drawable.width;
+    const height = drawable.naturalHeight || drawable.height;
+    if (width > 0 && height > 0) {
+      return { width: Math.round(width), height: Math.round(height) };
+    }
+    return null;
+  }
+  if (isImageBitmapLike(drawable)) {
+    if (drawable.width > 0 && drawable.height > 0) {
+      return { width: Math.round(drawable.width), height: Math.round(drawable.height) };
+    }
+    return null;
+  }
+  return null;
+};
+
+const extractPdfPageImageRefs = async (
+  page: any,
+  context: ImportParseContext
+): Promise<Array<{ imageRef: string; width?: number; height?: number }>> => {
+  const imageRefs: Array<{ imageRef: string; width?: number; height?: number }> = [];
   const operatorList = await page.getOperatorList().catch(() => null);
   const OPS = (pdfjsLib as any).OPS || {};
   if (!operatorList || !Array.isArray(operatorList.fnArray) || !Array.isArray(operatorList.argsArray)) {
@@ -916,20 +1063,27 @@ const extractPdfPageImageRefs = async (page: any, context: ImportParseContext) =
     const fn = operatorList.fnArray[index];
     const args = operatorList.argsArray[index] || [];
     let imageBlob: Blob | null = null;
+    let imageSize: { width: number; height: number } | null = null;
 
     if (fn === OPS.paintInlineImageXObject) {
       imageBlob = await resolvePdfImageObjectBlob(args[0]).catch(() => null);
+      imageSize = resolvePdfImageObjectSize(args[0]);
     } else if (fn === OPS.paintImageXObject || fn === OPS.paintJpegXObject) {
       const imageName = typeof args[0] === 'string' ? args[0] : '';
       if (!imageName || seenObjectNames.has(imageName)) continue;
       seenObjectNames.add(imageName);
       const source = typeof page.objs?.get === 'function' ? page.objs.get(imageName) : null;
       imageBlob = await resolvePdfImageObjectBlob(source).catch(() => null);
+      imageSize = resolvePdfImageObjectSize(source);
     }
 
     if (!imageBlob) continue;
     const imageRef = await collectImageRef(imageBlob, context);
-    imageRefs.push(imageRef);
+    imageRefs.push({
+      imageRef,
+      ...(imageSize?.width ? { width: imageSize.width } : {}),
+      ...(imageSize?.height ? { height: imageSize.height } : {}),
+    });
   }
 
   return imageRefs;
@@ -981,12 +1135,14 @@ const parsePdfFile = async (file: File, context: ImportParseContext) => {
     }
 
     const pageImageRefs = await extractPdfPageImageRefs(page, context);
-    pageImageRefs.forEach((imageRef) => {
+    pageImageRefs.forEach((imageItem) => {
       chapterBlocks.push({
         type: 'image',
-        imageRef,
+        imageRef: imageItem.imageRef,
         alt: `PDF page ${pageNumber} image`,
         title: `PDF page ${pageNumber} image`,
+        ...(imageItem.width ? { width: imageItem.width } : {}),
+        ...(imageItem.height ? { height: imageItem.height } : {}),
       });
     });
 

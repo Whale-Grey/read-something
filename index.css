@@ -60,6 +60,38 @@
         transition: background-color 0.3s ease, color 0.3s ease, font-size 0.3s ease;
       }
 
+      /* ── Touch-device :active fix ──
+         On mobile / PWA, the browser may delay :active until it confirms
+         the touch is not a scroll gesture. Applying touch-action:manipulation
+         on all tappable elements removes the double-tap-to-zoom delay so
+         :active fires immediately on pointerdown / touchstart.            */
+      @media (pointer: coarse) {
+        button,
+        [role="button"],
+        a,
+        .neu-btn,
+        .neu-card-pressable,
+        .app-card-press,
+        .lib-cover-card-press {
+          touch-action: manipulation;
+        }
+      }
+
+      /* ── Instant :active feedback ──
+         Tailwind's `transition-all` applies transition-duration:150ms to every
+         CSS property, which means :active shadow / transform changes are animated
+         over 150ms.  On a quick tap (especially in Chrome DevTools touch-emulation
+         or fast mouse clicks) the :active state ends before the animation finishes,
+         making the press feedback invisible.
+         Fix: force transition-duration to 0 during :active so the press style
+         appears instantly.  On release the element returns to its base state,
+         where the original transition-duration kicks in for a smooth release. */
+      button:active,
+      [role="button"]:active,
+      a:active {
+        transition-duration: 0s !important;
+      }
+
       /* Custom scrollbar for a cleaner look */
       ::-webkit-scrollbar {
         width: 6px;
@@ -244,6 +276,7 @@
         transition: box-shadow 150ms ease;
       }
       .neu-card-pressable:active {
+        transition-duration: 0s;
         box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light) !important;
       }
 
@@ -260,9 +293,15 @@
         cursor: pointer;
       }
       
-      .neu-btn:active, .neu-btn-active {
+      .neu-btn:active {
+        transition-duration: 0s;
         box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
-        color: var(--neu-highlight); /* This variable needs to update with theme too */
+        color: var(--neu-highlight);
+        transform: translateY(1px);
+      }
+      .neu-btn-active {
+        box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light);
+        color: var(--neu-highlight);
         transform: translateY(1px);
       }
 
@@ -351,6 +390,7 @@
         transform-origin: center;
       }
       .app-card-press:active {
+        transition-duration: 0s;
         transform: translateY(1px) scale(0.978);
         box-shadow: inset 4px 4px 8px var(--neu-shadow-dark), inset -4px -4px 8px var(--neu-shadow-light);
         filter: saturate(0.96);
@@ -359,6 +399,7 @@
         transition: transform 160ms ease, opacity 160ms ease;
       }
       .app-card-press:active .app-card-press-media {
+        transition-duration: 0s;
         transform: scale(0.985);
       }
 
@@ -368,6 +409,7 @@
         transform-origin: center;
       }
       .lib-cover-card-press:active {
+        transition-duration: 0s;
         transform: translateY(1px) scale(0.982);
         box-shadow: inset 5px 5px 10px var(--neu-shadow-dark), inset -5px -5px 10px var(--neu-shadow-light);
         filter: saturate(0.98);
@@ -376,6 +418,7 @@
         transition: opacity 170ms ease;
       }
       .lib-cover-card-press:active .lib-cover-card-media {
+        transition-duration: 0s;
         opacity: 0.94;
       }
       
@@ -716,6 +759,50 @@
 
       input[type='range'].app-range::-moz-range-progress {
         background: transparent;
+      }
+
+      .studyhub-note-editor h1 {
+        margin: 0.3rem 0;
+        font-size: 1.45rem;
+        line-height: 1.5;
+        font-weight: 700;
+      }
+
+      .studyhub-note-editor h2 {
+        margin: 0.25rem 0;
+        font-size: 1.25rem;
+        line-height: 1.5;
+        font-weight: 650;
+      }
+
+      .studyhub-note-editor h3 {
+        margin: 0.2rem 0;
+        font-size: 1.1rem;
+        line-height: 1.5;
+        font-weight: 620;
+      }
+
+      .studyhub-note-editor p {
+        margin: 0.15rem 0;
+      }
+
+      .studyhub-note-editor ul,
+      .studyhub-note-editor ol {
+        margin: 0.2rem 0;
+        padding-left: 1.45rem;
+      }
+
+      .studyhub-note-editor ul {
+        list-style: disc outside;
+      }
+
+      .studyhub-note-editor ol {
+        list-style: decimal outside;
+      }
+
+      .studyhub-note-editor li {
+        display: list-item;
+        margin: 0.1rem 0;
       }
 
 @tailwind utilities;
