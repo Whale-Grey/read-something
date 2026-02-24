@@ -489,8 +489,12 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
   const [ttsExportStatus, setTtsExportStatus] = useState<{ text: string; skippedReasons: string[] } | null>(null);
   const [cssApplySuccess, setCssApplySuccess] = useState(false);
   const [cssClearSuccess, setCssClearSuccess] = useState(false);
+  const [cssSaveSuccess, setCssSaveSuccess] = useState(false);
+  const [cssEditSuccess, setCssEditSuccess] = useState(false);
   const cssApplyTimerRef = useRef<number | null>(null);
   const cssClearTimerRef = useRef<number | null>(null);
+  const cssSaveTimerRef = useRef<number | null>(null);
+  const cssEditTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
   const modalCloseTimerRef = useRef<number | null>(null);
   const archiveDeleteDialogTimerRef = useRef<number | null>(null);
@@ -554,6 +558,14 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
     if (cssClearTimerRef.current) {
       window.clearTimeout(cssClearTimerRef.current);
       cssClearTimerRef.current = null;
+    }
+    if (cssSaveTimerRef.current) {
+      window.clearTimeout(cssSaveTimerRef.current);
+      cssSaveTimerRef.current = null;
+    }
+    if (cssEditTimerRef.current) {
+      window.clearTimeout(cssEditTimerRef.current);
+      cssEditTimerRef.current = null;
     }
   }, []);
   useEffect(() => {
@@ -1187,20 +1199,36 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                           <button
                             type="button"
                             onClick={() => {
-                              if (presetName.trim()) {
-                                if (editingPresetId) {
-                                  onRenameBubbleCssPreset(editingPresetId, presetName.trim());
-                                  setEditingPresetId(null);
-                                } else {
-                                  onSaveBubbleCssPreset(presetName.trim());
-                                }
+                              const name = presetName.trim();
+                              if (editingPresetId && name) {
+                                onRenameBubbleCssPreset(editingPresetId, name);
+                                setEditingPresetId(null);
                                 setPresetName('');
+                              } else if (name) {
+                                onSaveBubbleCssPreset(name);
+                                setPresetName('');
+                              } else {
+                                const selectedId = appearanceSettings.selectedBubbleCssPresetId;
+                                if (selectedId) {
+                                  const draft = appearanceSettings.bubbleCssDraft;
+                                  onUpdateAppearanceSettings({
+                                    bubbleCssApplied: draft,
+                                    bubbleCssPresets: appearanceSettings.bubbleCssPresets.map((p) =>
+                                      p.id === selectedId ? { ...p, css: draft } : p
+                                    ),
+                                  });
+                                }
                               }
+                              if (cssSaveTimerRef.current) window.clearTimeout(cssSaveTimerRef.current);
+                              setCssSaveSuccess(true);
+                              cssSaveTimerRef.current = window.setTimeout(() => setCssSaveSuccess(false), 1600);
                             }}
-                            className={`w-10 h-10 aspect-square shrink-0 rounded-xl flex items-center justify-center text-rose-400 ${btnClass} ${activeBtnClass} transition-all`}
+                            className={`w-10 h-10 aspect-square shrink-0 rounded-xl flex items-center justify-center relative overflow-hidden ${btnClass} ${activeBtnClass} transition-all`}
+                            style={{ color: 'rgb(var(--theme-500) / 1)' }}
                             title="保存"
                           >
-                            <Save size={16} />
+                            <Save size={16} className={`transition-all duration-300 ${cssSaveSuccess ? 'opacity-0 scale-50' : 'opacity-100 scale-100'}`} />
+                            <Check size={16} className={`absolute transition-all duration-300 ${cssSaveSuccess ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`} />
                           </button>
                           <button
                             type="button"
@@ -1209,16 +1237,20 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                               if (selectedPreset) {
                                 setPresetName(selectedPreset.name);
                                 setEditingPresetId(selectedPreset.id);
+                                if (cssEditTimerRef.current) window.clearTimeout(cssEditTimerRef.current);
+                                setCssEditSuccess(true);
+                                cssEditTimerRef.current = window.setTimeout(() => setCssEditSuccess(false), 1600);
                               }
                             }}
-                            className={`w-10 h-10 aspect-square shrink-0 rounded-xl flex items-center justify-center transition-all ${
+                            className={`w-10 h-10 aspect-square shrink-0 rounded-xl flex items-center justify-center relative overflow-hidden transition-all ${
                               selectedPreset
                                 ? `${btnClass} ${activeBtnClass}`
                                 : disabledIconButtonClass
                             }`}
                             title="重命名"
                           >
-                            <Edit2 size={16} />
+                            <Edit2 size={16} className={`transition-all duration-300 ${cssEditSuccess ? 'opacity-0 scale-50' : 'opacity-100 scale-100'}`} />
+                            <Check size={16} className={`absolute transition-all duration-300 ${cssEditSuccess ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`} />
                           </button>
                           <button
                             type="button"
@@ -1226,9 +1258,10 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                             onClick={() => selectedPreset && onDeleteBubbleCssPreset(selectedPreset.id)}
                             className={`w-10 h-10 aspect-square shrink-0 rounded-xl flex items-center justify-center transition-all ${
                               selectedPreset
-                                ? enabledDangerIconButtonClass
+                                ? `${btnClass} ${activeBtnClass}`
                                 : disabledIconButtonClass
                             }`}
+                            style={{ color: selectedPreset ? (isDarkMode ? '#cf8f97' : '#bf616b') : undefined }}
                             title="删除"
                           >
                             <Trash2 size={16} />

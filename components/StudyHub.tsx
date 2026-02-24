@@ -27,7 +27,7 @@ import {
 import { callAiModel, sanitizeTextForAiPrompt } from '../utils/readerAiEngine';
 import { getBookContent } from '../utils/bookContentStorage';
 import { estimateRagSafeOffset, retrieveRelevantChunks, isEmbedModelLoaded } from '../utils/ragEngine';
-import { DEFAULT_PAPER_CSS_PRESETS } from '../utils/paperCssPresets';
+import { DEFAULT_PAPER_CSS_PRESETS, DEFAULT_PAPER_CSS_PRESET_ID } from '../utils/paperCssPresets';
 
 interface StudyHubProps {
   isDarkMode: boolean;
@@ -83,7 +83,11 @@ const PAPER_CSS_PLACEHOLDER = `可用类名：
 .sh-note-placeholder  /* 占位提示文字 */
 
 暗色模式：.dark-mode .sh-paper { }
-应用后自动覆盖内置纸张背景`;
+应用后自动覆盖内置纸张背景
+
+iOS提示：li/strong等可编辑元素请勿
+用 ::before/::after 伪元素，建议改
+用 background-image 等元素自身属性`;
 
 interface PaperCssOptionItem {
   value: string;
@@ -259,8 +263,12 @@ const StudyHub: React.FC<StudyHubProps> = ({
   const [paperCssEditingPresetId, setPaperCssEditingPresetId] = useState<string | null>(null);
   const [paperCssApplySuccess, setPaperCssApplySuccess] = useState(false);
   const [paperCssClearSuccess, setPaperCssClearSuccess] = useState(false);
+  const [paperCssSaveSuccess, setPaperCssSaveSuccess] = useState(false);
+  const [paperCssEditSuccess, setPaperCssEditSuccess] = useState(false);
   const paperCssApplyTimerRef = useRef<number | null>(null);
   const paperCssClearTimerRef = useRef<number | null>(null);
+  const paperCssSaveTimerRef = useRef<number | null>(null);
+  const paperCssEditTimerRef = useRef<number | null>(null);
 
   // ─── Quiz state ───
   const [quizView, setQuizView] = useState<QuizView>('history');
@@ -302,6 +310,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
   const autoSaveTimerRef = useRef<number | null>(null);
   const noteEditorRef = useRef<HTMLDivElement | null>(null);
   const noteEditorSyncingRef = useRef(false);
+  const noteEditorComposingRef = useRef(false);
 
   // ─── Load data ───
   useEffect(() => {
@@ -648,10 +657,74 @@ const StudyHub: React.FC<StudyHubProps> = ({
     setNoteContent(markdown);
   }, [extractMarkdownFromEditorHtml]);
 
+  /** Convert stray <div> inside <ul>/<ol> back to <li> (iOS Safari Chinese IME + list-style-type:none) */
+  const normalizeListChildDivs = useCallback(() => {
+    const editor = noteEditorRef.current;
+    if (!editor) return;
+    const strayDivs = editor.querySelectorAll('ul > div, ol > div');
+    if (strayDivs.length === 0) return;
+    strayDivs.forEach((div) => {
+      const li = document.createElement('li');
+      while (div.firstChild) li.appendChild(div.firstChild);
+      div.parentNode!.replaceChild(li, div);
+    });
+  }, []);
+
+  /** Normalize <b> → <strong> and <i> → <em> so CSS targeting strong/em always works
+   *  (execCommand('bold') creates <b> on Safari, but user CSS targets <strong>)
+   *  Preserves cursor position across the replacement. */
+  const normalizeInlineTags = useCallback(() => {
+    const editor = noteEditorRef.current;
+    if (!editor) return;
+    // Early return if nothing to normalize — avoids touching the selection,
+    // which would destroy the browser's pending execCommand format state
+    // (e.g. bold mode toggled at a collapsed cursor on iOS Safari).
+    if (!editor.querySelector('b') && !editor.querySelector('i')) return;
+
+    // Save selection
+    const sel = window.getSelection();
+    let savedAnchorNode = sel?.anchorNode ?? null;
+    let savedAnchorOffset = sel?.anchorOffset ?? 0;
+    let savedFocusNode = sel?.focusNode ?? null;
+    let savedFocusOffset = sel?.focusOffset ?? 0;
+
+    const tagsToNormalize: Array<[string, string]> = [['b', 'strong'], ['i', 'em']];
+    for (const [from, to] of tagsToNormalize) {
+      const elements = editor.querySelectorAll(from);
+      elements.forEach((el) => {
+        const replacement = document.createElement(to);
+        while (el.firstChild) replacement.appendChild(el.firstChild);
+        el.parentNode!.replaceChild(replacement, el);
+        // Update saved selection refs if they pointed to the replaced element
+        if (savedAnchorNode === el) savedAnchorNode = replacement;
+        if (savedFocusNode === el) savedFocusNode = replacement;
+      });
+    }
+
+    // Restore selection
+    if (sel && savedAnchorNode && editor.contains(savedAnchorNode)) {
+      try {
+        const range = document.createRange();
+        range.setStart(savedAnchorNode, savedAnchorOffset);
+        if (savedFocusNode && editor.contains(savedFocusNode)) {
+          range.setEnd(savedFocusNode, savedFocusOffset);
+        } else {
+          range.collapse(true);
+        }
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch { /* offset out of bounds — browser will recover */ }
+    }
+  }, []);
+
   const handleNoteEditorInput = useCallback(() => {
     if (noteEditorSyncingRef.current) return;
+    if (!noteEditorComposingRef.current) {
+      normalizeListChildDivs();
+      normalizeInlineTags();
+    }
     syncNoteContentFromEditor();
-  }, [syncNoteContentFromEditor]);
+  }, [syncNoteContentFromEditor, normalizeListChildDivs, normalizeInlineTags]);
 
   const areNoteToolbarStatesEqual = (left: NoteToolbarState, right: NoteToolbarState) =>
     left.block === right.block &&
@@ -1104,6 +1177,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
       boundBookIds: createSelectedBookIds,
       coverUrl: createCoverUrl || undefined,
       paperCssPresets: DEFAULT_PAPER_CSS_PRESETS.map((p) => ({ ...p })),
+      selectedPaperCssPresetId: DEFAULT_PAPER_CSS_PRESET_ID,
       notes: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -1229,7 +1303,9 @@ const StudyHub: React.FC<StudyHubProps> = ({
     await saveNotebook(updated);
   };
 
+  /** Apply = visual only — inject CSS but don't persist to the preset */
   const handleApplyPaperCss = async () => {
+    normalizeInlineTags();
     await updateNotebook({ paperCssDraft, paperCssApplied: paperCssDraft });
   };
 
@@ -1238,7 +1314,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
     await updateNotebook({
       paperCssDraft: '',
       paperCssApplied: '',
-      selectedPaperCssPresetId: null,
+      selectedPaperCssPresetId: DEFAULT_PAPER_CSS_PRESET_ID,
     });
   };
 
@@ -1251,18 +1327,19 @@ const StudyHub: React.FC<StudyHubProps> = ({
     const nextId = `paper-css-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const newPreset: ReaderCssPreset = { id: nextId, name: safeName, css: paperCssDraft };
     const nextPresets = [...(activeNotebook.paperCssPresets ?? DEFAULT_PAPER_CSS_PRESETS), newPreset];
-    void updateNotebook({ paperCssPresets: nextPresets, selectedPaperCssPresetId: nextId });
+    void updateNotebook({ paperCssPresets: nextPresets, selectedPaperCssPresetId: nextId, paperCssApplied: paperCssDraft });
   };
 
   const handleDeletePaperCssPreset = (presetId: string) => {
-    if (!activeNotebook) return;
+    if (!activeNotebook || presetId === DEFAULT_PAPER_CSS_PRESET_ID) return;
     const prev = activeNotebook.paperCssPresets ?? [...DEFAULT_PAPER_CSS_PRESETS];
     const next = prev.filter((p) => p.id !== presetId);
     const resetSelected = activeNotebook.selectedPaperCssPresetId === presetId;
     void updateNotebook({
       paperCssPresets: next,
-      ...(resetSelected ? { selectedPaperCssPresetId: null } : {}),
+      ...(resetSelected ? { selectedPaperCssPresetId: DEFAULT_PAPER_CSS_PRESET_ID, paperCssDraft: '', paperCssApplied: '' } : {}),
     });
+    if (resetSelected) setPaperCssDraft('');
   };
 
   const handleRenamePaperCssPreset = (presetId: string, name: string) => {
@@ -1272,9 +1349,9 @@ const StudyHub: React.FC<StudyHubProps> = ({
       return;
     }
     const next = (activeNotebook.paperCssPresets ?? [...DEFAULT_PAPER_CSS_PRESETS]).map((p) =>
-      p.id === presetId ? { ...p, name: safeName } : p,
+      p.id === presetId ? { ...p, name: safeName, css: paperCssDraft } : p,
     );
-    void updateNotebook({ paperCssPresets: next });
+    void updateNotebook({ paperCssPresets: next, paperCssApplied: paperCssDraft });
   };
 
   const handleSelectPaperCssPreset = (presetId: string | null) => {
@@ -2404,7 +2481,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
     if (!showPaperModal || !activeNotebook) return null;
     const currentPaper = activeNotebook.paperBgUrl || '';
     const cssPresets: ReaderCssPreset[] = activeNotebook.paperCssPresets ?? DEFAULT_PAPER_CSS_PRESETS;
-    const cssSelectedId = activeNotebook.selectedPaperCssPresetId || '';
+    const cssSelectedId = activeNotebook.selectedPaperCssPresetId || DEFAULT_PAPER_CSS_PRESET_ID;
     const cssSelectedPreset = cssPresets.find((p) => p.id === cssSelectedId) || null;
 
     return (
@@ -2518,8 +2595,8 @@ const StudyHub: React.FC<StudyHubProps> = ({
                 <PaperCssSingleSelectDropdown
                   options={cssPresets.map((p) => ({ value: p.id, label: p.name }))}
                   value={cssSelectedId}
-                  onChange={(val) => handleSelectPaperCssPreset(val || null)}
-                  placeholder="无"
+                  onChange={(val) => handleSelectPaperCssPreset(val || DEFAULT_PAPER_CSS_PRESET_ID)}
+                  placeholder="默认"
                   inputClass={inputClass}
                   cardClass={cardClass}
                   isDarkMode={isDarkMode}
@@ -2569,20 +2646,34 @@ const StudyHub: React.FC<StudyHubProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        if (paperCssPresetName.trim()) {
-                          if (paperCssEditingPresetId) {
-                            handleRenamePaperCssPreset(paperCssEditingPresetId, paperCssPresetName.trim());
-                            setPaperCssEditingPresetId(null);
-                          } else {
-                            handleSavePaperCssPreset(paperCssPresetName.trim());
-                          }
+                        normalizeInlineTags();
+                        const name = paperCssPresetName.trim();
+                        if (paperCssEditingPresetId && name) {
+                          handleRenamePaperCssPreset(paperCssEditingPresetId, name);
+                          setPaperCssEditingPresetId(null);
                           setPaperCssPresetName('');
+                        } else if (name) {
+                          handleSavePaperCssPreset(name);
+                          setPaperCssPresetName('');
+                        } else {
+                          const selectedId = activeNotebook?.selectedPaperCssPresetId;
+                          if (selectedId && activeNotebook) {
+                            const presets = (activeNotebook.paperCssPresets ?? [...DEFAULT_PAPER_CSS_PRESETS]).map((p) =>
+                              p.id === selectedId ? { ...p, css: paperCssDraft } : p
+                            );
+                            void updateNotebook({ paperCssApplied: paperCssDraft, paperCssPresets: presets });
+                          }
                         }
+                        if (paperCssSaveTimerRef.current) window.clearTimeout(paperCssSaveTimerRef.current);
+                        setPaperCssSaveSuccess(true);
+                        paperCssSaveTimerRef.current = window.setTimeout(() => setPaperCssSaveSuccess(false), 1600);
                       }}
-                      className={`w-10 h-10 aspect-square shrink-0 rounded-xl flex items-center justify-center text-rose-400 ${btnClass} ${activeBtnClass} transition-all`}
+                      className={`w-10 h-10 aspect-square shrink-0 rounded-xl flex items-center justify-center relative overflow-hidden ${btnClass} ${activeBtnClass} transition-all`}
+                      style={{ color: 'rgb(var(--theme-500) / 1)' }}
                       title="保存"
                     >
-                      <Save size={16} />
+                      <Save size={16} className={`transition-all duration-300 ${paperCssSaveSuccess ? 'opacity-0 scale-50' : 'opacity-100 scale-100'}`} />
+                      <Check size={16} className={`absolute transition-all duration-300 ${paperCssSaveSuccess ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`} />
                     </button>
                     {/* Edit (rename) */}
                     <button
@@ -2592,14 +2683,18 @@ const StudyHub: React.FC<StudyHubProps> = ({
                         if (cssSelectedPreset) {
                           setPaperCssPresetName(cssSelectedPreset.name);
                           setPaperCssEditingPresetId(cssSelectedPreset.id);
+                          if (paperCssEditTimerRef.current) window.clearTimeout(paperCssEditTimerRef.current);
+                          setPaperCssEditSuccess(true);
+                          paperCssEditTimerRef.current = window.setTimeout(() => setPaperCssEditSuccess(false), 1600);
                         }
                       }}
-                      className={`w-10 h-10 aspect-square shrink-0 rounded-xl flex items-center justify-center transition-all ${
+                      className={`w-10 h-10 aspect-square shrink-0 rounded-xl flex items-center justify-center relative overflow-hidden transition-all ${
                         cssSelectedPreset ? `${btnClass} ${activeBtnClass}` : disabledIconButtonClass
                       }`}
                       title="重命名"
                     >
-                      <Edit2 size={16} />
+                      <Edit2 size={16} className={`transition-all duration-300 ${paperCssEditSuccess ? 'opacity-0 scale-50' : 'opacity-100 scale-100'}`} />
+                      <Check size={16} className={`absolute transition-all duration-300 ${paperCssEditSuccess ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`} />
                     </button>
                     {/* Delete */}
                     <button
@@ -2786,7 +2881,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
         </div>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 no-scrollbar">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 no-scrollbar">
           <div className="pb-24 space-y-3 animate-fade-in">
             {activeNotebook.notes.length === 0 && (
               <div className="text-center py-12 text-slate-400">
@@ -2865,12 +2960,8 @@ const StudyHub: React.FC<StudyHubProps> = ({
           </span>
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 no-scrollbar">
-          <div className="pt-3 pb-24 space-y-4 animate-fade-in">
-
-        {/* Markdown style toolbar */}
-        <div className="w-full overflow-visible py-1">
+        {/* Markdown style toolbar — fixed, outside scroll */}
+        <div className="w-full overflow-visible pt-1 pb-3 px-6">
           <div className="grid grid-cols-8 gap-2 overflow-visible">
             {noteStylePresets.map((preset) => {
               const Icon = preset.icon;
@@ -2882,6 +2973,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
                   title={preset.label}
                   aria-label={preset.label}
                   onPointerDown={(event) => handleNoteStyleButtonPointerDown(preset.key, event)}
+                  onMouseDown={(e) => e.preventDefault()}
                   onPointerUp={clearPressedNoteStyleButton}
                   onPointerLeave={clearPressedNoteStyleButton}
                   onPointerCancel={clearPressedNoteStyleButton}
@@ -2897,6 +2989,10 @@ const StudyHub: React.FC<StudyHubProps> = ({
             })}
           </div>
         </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 no-scrollbar">
+          <div className="pt-3 pb-24 space-y-4 animate-fade-in">
 
         {/* Lined paper */}
         <div className={`sh-paper rounded-2xl overflow-hidden ${cardClass}`}
@@ -2920,6 +3016,12 @@ const StudyHub: React.FC<StudyHubProps> = ({
               suppressContentEditableWarning
               spellCheck={false}
               onInput={handleNoteEditorInput}
+              onCompositionStart={() => { noteEditorComposingRef.current = true; }}
+              onCompositionEnd={() => {
+                noteEditorComposingRef.current = false;
+                normalizeListChildDivs();
+                normalizeInlineTags();
+              }}
               onFocus={() => {
                 setIsNoteEditorFocused(true);
                 refreshNoteToolbarState();

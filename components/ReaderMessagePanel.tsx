@@ -1136,6 +1136,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     }
   }, [appSettings.readerMore.appearance.chatBackgroundImage, updateReaderMoreAppearanceSettings]);
 
+  /** Apply = visual only — inject CSS but don't persist to the preset */
   const handleApplyBubbleCssDraft = useCallback(() => {
     updateReaderMoreAppearanceSettings({
       bubbleCssApplied: appSettings.readerMore.appearance.bubbleCssDraft,
@@ -1149,17 +1150,15 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
         showToast('请输入预设名称', 'info');
         return;
       }
+      const draft = appSettings.readerMore.appearance.bubbleCssDraft;
       const nextId = `css-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       updateReaderMoreAppearanceSettings({
         bubbleCssPresets: [
           ...appSettings.readerMore.appearance.bubbleCssPresets,
-          {
-            id: nextId,
-            name: safeName,
-            css: appSettings.readerMore.appearance.bubbleCssDraft,
-          },
+          { id: nextId, name: safeName, css: draft },
         ],
         selectedBubbleCssPresetId: nextId,
+        bubbleCssApplied: draft,
       });
     },
     [appSettings.readerMore.appearance.bubbleCssDraft, appSettings.readerMore.appearance.bubbleCssPresets, updateReaderMoreAppearanceSettings, showToast]
@@ -1188,18 +1187,15 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
         showToast('请输入新的预设名称', 'info');
         return;
       }
+      const draft = appSettings.readerMore.appearance.bubbleCssDraft;
       updateReaderMoreAppearanceSettings({
         bubbleCssPresets: appSettings.readerMore.appearance.bubbleCssPresets.map((item) =>
-          item.id === presetId
-            ? {
-                ...item,
-                name: safeName,
-              }
-            : item
+          item.id === presetId ? { ...item, name: safeName, css: draft } : item
         ),
+        bubbleCssApplied: draft,
       });
     },
-    [appSettings.readerMore.appearance.bubbleCssPresets, updateReaderMoreAppearanceSettings, showToast]
+    [appSettings.readerMore.appearance.bubbleCssDraft, appSettings.readerMore.appearance.bubbleCssPresets, updateReaderMoreAppearanceSettings, showToast]
   );
 
   const handleSelectBubbleCssPreset = useCallback(
