@@ -125,6 +125,8 @@ const RAG_DEBUG_EVENT_LIMIT = 100;
 const MODEL_HOST_CHECK_TIMEOUT_MS = 15000;
 const MODEL_PIPELINE_LOAD_TIMEOUT_MS = 120000;
 const MODEL_PIPELINE_LOAD_TIMEOUT_IOS_MS = 240000;
+const MODEL_STALL_TIMEOUT_MS = 30000;
+const MODEL_STALL_TIMEOUT_IOS_MS = 60000;
 
 const RAG_DB_NAME = 'app_rag_embeddings_v1';
 const RAG_DB_VERSION = 1;
@@ -1096,23 +1098,51 @@ const getEmbedPipeline = async () => {
       }
 
       const hosts = getRagModelHosts();
+      const stallTimeoutMs = isIOSRuntime ? MODEL_STALL_TIMEOUT_IOS_MS : MODEL_STALL_TIMEOUT_MS;
       emitModelLoadProgress(0);
       emitRagModelDebugEvent({
         type: 'model-load-start',
-        detail: `hosts=${hosts.join(', ')} | browserCache=${browserCacheAvailable ? 'on' : 'off'} | ios=${isIOSRuntime ? 'yes' : 'no'} | timeout=${pipelineLoadTimeoutMs}ms`,
+        detail: `hosts=${hosts.join(', ')} | browserCache=${browserCacheAvailable ? 'on' : 'off'} | ios=${isIOSRuntime ? 'yes' : 'no'} | timeout=${pipelineLoadTimeoutMs}ms | stall=${stallTimeoutMs}ms`,
       });
+
+      // ── 并行健康预检：所有 host 同时检查，全不可达时 ~15s 快速失败 ──
+      const healthResults = await Promise.allSettled(
+        hosts.map(async (host) => {
+          await ensureModelHostHealth(host);
+          return host;
+        }),
+      );
+      const healthyHosts = healthResults
+        .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
+        .map((r) => r.value);
+
+      if (healthyHosts.length === 0) {
+        const lastReason = healthResults.length > 0 && healthResults[healthResults.length - 1].status === 'rejected'
+          ? formatRagDebugDetail((healthResults[healthResults.length - 1] as PromiseRejectedResult).reason)
+          : 'all checks failed';
+        emitRagModelDebugEvent({
+          type: 'model-load-failed',
+          detail: `All hosts unreachable (fast-fail) | hosts=${hosts.join(', ')} | last=${lastReason}`,
+        });
+        emitModelLoadProgress(0);
+        throw new Error(`[RAG] All model hosts are unreachable (${hosts.join(', ')}). ${lastReason}`);
+      }
+
       let lastError: unknown = null;
 
-      for (const host of hosts) {
+      for (const host of healthyHosts) {
         try {
           env.remoteHost = normalizeHost(host);
-          await ensureModelHostHealth(host);
+
+          // ── 停滞检测：追踪 progress_callback 最后触发时间 ──
+          let lastRealProgressAt = Date.now();
 
           const loadPipe = () => pipeline('feature-extraction', MODEL_NAME, {
             revision: HF_REMOTE_REVISION,
             progress_callback: (event: unknown) => {
               const progress = parseModelLoadProgressEvent(event);
               if (progress !== null) {
+                lastRealProgressAt = Date.now();
                 const capped = Math.min(0.95, progress);
                 if (capped > modelLoadProgress) {
                   emitModelLoadProgress(capped);
@@ -1121,6 +1151,7 @@ const getEmbedPipeline = async () => {
             },
           });
           const runLoadPipeWithProgress = async (timeoutMessage: string): Promise<any> => {
+            lastRealProgressAt = Date.now();
             let syntheticProgress = Math.max(0.1, modelLoadProgress);
             const ticker = setInterval(() => {
               syntheticProgress = Math.min(0.95, syntheticProgress + 0.01);
@@ -1128,14 +1159,26 @@ const getEmbedPipeline = async () => {
                 emitModelLoadProgress(syntheticProgress);
               }
             }, 900);
+
+            // 停滞检测：若持续无真实进度则提前中止
+            let stallReject: ((reason: Error) => void) | null = null;
+            const stallPromise = new Promise<never>((_, reject) => { stallReject = reject; });
+            const stallChecker = setInterval(() => {
+              if (Date.now() - lastRealProgressAt > stallTimeoutMs) {
+                stallReject?.(new Error(
+                  `[RAG] Download stalled (no progress for ${stallTimeoutMs / 1000}s) on ${host}`,
+                ));
+              }
+            }, 5000);
+
             try {
-              return await promiseWithTimeout(
-                loadPipe(),
-                pipelineLoadTimeoutMs,
-                timeoutMessage,
-              );
+              return await Promise.race([
+                promiseWithTimeout(loadPipe(), pipelineLoadTimeoutMs, timeoutMessage),
+                stallPromise,
+              ]);
             } finally {
               clearInterval(ticker);
+              clearInterval(stallChecker);
             }
           };
           emitRagModelDebugEvent({ type: 'pipeline-load-start', host, detail: MODEL_NAME });
