@@ -39,6 +39,7 @@ interface StudyHubProps {
   worldBookEntries: WorldBookEntry[];
   apiConfig: ApiConfig;
   readingExcerptCharCount: number;
+  readingContextIgnorePanelClip: boolean;
   showNotification: (message: string, type?: 'success' | 'error') => void;
   ragApiConfigResolver?: RagApiConfigResolver;
 }
@@ -210,8 +211,8 @@ const PaperCssSingleSelectDropdown = ({
 
 const StudyHub: React.FC<StudyHubProps> = ({
   isDarkMode, books, personas, activePersonaId, characters,
-  activeCharacterId, worldBookEntries, apiConfig, readingExcerptCharCount, showNotification,
-  ragApiConfigResolver,
+  activeCharacterId, worldBookEntries, apiConfig, readingExcerptCharCount,
+  readingContextIgnorePanelClip, showNotification, ragApiConfigResolver,
 }) => {
   // ─── Theme classes (matching Library.tsx) ───
   const containerClass = isDarkMode ? 'bg-[#2d3748] text-slate-200' : 'neu-bg text-slate-600';
@@ -1681,7 +1682,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
         abortRef.current = controller;
 
         const bookContexts = await prepareBookContexts(
-          books, activeNotebook.boundBookIds, readingExcerptCharCount,
+          books, activeNotebook.boundBookIds, readingExcerptCharCount, readingContextIgnorePanelClip,
         );
 
         const ragQuery = buildStudyHubRagQuery({ noteText: noteContent });
@@ -1761,7 +1762,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
       abortRef.current = controller;
 
       const bookContexts = await prepareBookContexts(
-        books, activeNotebook.boundBookIds, readingExcerptCharCount,
+        books, activeNotebook.boundBookIds, readingExcerptCharCount, readingContextIgnorePanelClip,
       );
 
       const ragQuery = buildStudyHubRagQuery({ noteText: noteContent, latestUserReply: replyText });
@@ -1847,7 +1848,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
     try {
       const controller = new AbortController();
       abortRef.current = controller;
-      const bookContexts = await prepareBookContexts(books, activeNotebook.boundBookIds, readingExcerptCharCount);
+      const bookContexts = await prepareBookContexts(books, activeNotebook.boundBookIds, readingExcerptCharCount, readingContextIgnorePanelClip);
 
       let prompt: string;
       if (msgIdx === 0) {
@@ -1902,7 +1903,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
       abortRef.current = controller;
 
       const bookContexts = await prepareBookContexts(
-        books, qcBookIds, readingExcerptCharCount,
+        books, qcBookIds, readingExcerptCharCount, readingContextIgnorePanelClip,
       );
 
       if (bookContexts.length === 0) {

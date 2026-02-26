@@ -44,6 +44,7 @@ import type { TtsPreset, TtsChunk } from '../types';
 import { getBookContent, saveBookReaderState } from '../utils/bookContentStorage';
 import { buildConversationKey, persistConversationBucket, readConversationBucket } from '../utils/readerChatRuntime';
 import { getImageBlobByRef, isImageRef } from '../utils/imageStorage';
+import { resolveVisibleReaderTextRange, resolveFullViewportTextRange } from '../utils/readerVisibleRange';
 import ReaderMessagePanel from './ReaderMessagePanel';
 import ResolvedImage from './ResolvedImage';
 
@@ -2639,6 +2640,40 @@ const Reader: React.FC<ReaderProps> = ({
 
   const readerTextForHighlighting = useMemo(() => paragraphs.join('\n'), [paragraphs]);
 
+  // Persist reader state on page unload (app close / tab close while reading)
+  useEffect(() => {
+    const handlePageHide = () => {
+      if (!activeBook?.id) return;
+      const readingPosition = latestReadingPositionRef.current;
+      if (!readingPosition) return;
+
+      const scroller = readerScrollRef.current;
+      const visibleRatio =
+        scroller && scroller.scrollHeight > 1
+          ? clamp(scroller.clientHeight / scroller.scrollHeight, 0, 1)
+          : 0;
+      const visibleTextRange = scroller
+        ? (appSettings.readerMore.feature.readingContextIgnorePanelClip
+            ? resolveFullViewportTextRange(scroller)
+            : resolveVisibleReaderTextRange(scroller))
+        : null;
+
+      const readerState: ReaderBookState = {
+        highlightColor,
+        highlightsByChapter: highlightRangesByChapter,
+        bookmarks: sortedBookmarks,
+        readingPosition: { ...readingPosition, updatedAt: Date.now() },
+        visibleRatio,
+        activeChapterRenderedText: readerTextForHighlighting,
+        ...(visibleTextRange ? { visibleTextRange } : {}),
+      };
+      saveBookReaderState(activeBook.id, readerState).catch(() => {});
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, [activeBook?.id, highlightColor, highlightRangesByChapter, sortedBookmarks, readerTextForHighlighting, appSettings.readerMore.feature.readingContextIgnorePanelClip]);
+
   const highlightStorageKey = useMemo(() => {
     return selectedChapterIndex === null ? 'full' : `chapter-${selectedChapterIndex}`;
   }, [selectedChapterIndex]);
@@ -2691,11 +2726,24 @@ const Reader: React.FC<ReaderProps> = ({
 
     persistReaderStateTimerRef.current = window.setTimeout(() => {
       const readingPosition = syncReadingPositionRef(Date.now()) || latestReadingPositionRef.current || undefined;
+      const scroller = readerScrollRef.current;
+      const visibleRatio =
+        scroller && scroller.scrollHeight > 1
+          ? clamp(scroller.clientHeight / scroller.scrollHeight, 0, 1)
+          : 0;
+      const visibleTextRange = scroller
+        ? (appSettings.readerMore.feature.readingContextIgnorePanelClip
+            ? resolveFullViewportTextRange(scroller)
+            : resolveVisibleReaderTextRange(scroller))
+        : null;
       const readerState: ReaderBookState = {
         highlightColor,
         highlightsByChapter: highlightRangesByChapter,
         bookmarks: sortedBookmarks,
         readingPosition,
+        visibleRatio,
+        activeChapterRenderedText: readerTextForHighlighting,
+        ...(visibleTextRange ? { visibleTextRange } : {}),
       };
       saveBookReaderState(activeBook.id, readerState).catch((error) => {
         console.error('Failed to persist reader state:', error);
@@ -2717,6 +2765,8 @@ const Reader: React.FC<ReaderProps> = ({
     sortedBookmarks,
     isRestorePositionPending,
     areChapterImagesSettled,
+    readerTextForHighlighting,
+    appSettings.readerMore.feature.readingContextIgnorePanelClip,
   ]);
 
   useEffect(() => {
@@ -4252,11 +4302,24 @@ const Reader: React.FC<ReaderProps> = ({
           };
         }
       }
+      const scroller = readerScrollRef.current;
+      const visibleRatio =
+        scroller && scroller.scrollHeight > 1
+          ? clamp(scroller.clientHeight / scroller.scrollHeight, 0, 1)
+          : 0;
+      const visibleTextRange = scroller
+        ? (appSettings.readerMore.feature.readingContextIgnorePanelClip
+            ? resolveFullViewportTextRange(scroller)
+            : resolveVisibleReaderTextRange(scroller))
+        : null;
       const readerState: ReaderBookState = {
         highlightColor,
         highlightsByChapter: highlightRangesByChapter,
         bookmarks: sortedBookmarks,
         readingPosition: sessionSnapshot.readingPosition,
+        visibleRatio,
+        activeChapterRenderedText: readerTextForHighlighting,
+        ...(visibleTextRange ? { visibleTextRange } : {}),
         ...(ttsResumePosition ? { ttsResumePosition } : {}),
       };
       saveBookReaderState(sessionSnapshot.bookId, readerState).catch((error) => {

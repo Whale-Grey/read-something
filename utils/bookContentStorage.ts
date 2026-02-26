@@ -2,7 +2,7 @@ import { Book, Chapter, ReaderBookState, ReaderSummaryCard } from '../types';
 
 const BOOK_CONTENT_DB_NAME = 'app_book_content_v1';
 const BOOK_CONTENT_STORE = 'book_contents';
-const BOOK_CONTENT_DB_VERSION = 1;
+const BOOK_CONTENT_DB_VERSION = 2;
 
 export interface StoredBookContent {
   fullText: string;
@@ -118,11 +118,14 @@ const normalizeStoredBookContent = (value: unknown): StoredBookContent | null =>
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
-const openBookContentDb = (): Promise<IDBDatabase> => {
-  if (dbPromise) return dbPromise;
+const isVersionError = (error: unknown): boolean =>
+  Boolean(error && typeof error === 'object' && (error as { name?: unknown }).name === 'VersionError');
 
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(BOOK_CONTENT_DB_NAME, BOOK_CONTENT_DB_VERSION);
+const openBookContentDbRequest = (version?: number): Promise<IDBDatabase> =>
+  new Promise((resolve, reject) => {
+    const request = typeof version === 'number'
+      ? indexedDB.open(BOOK_CONTENT_DB_NAME, version)
+      : indexedDB.open(BOOK_CONTENT_DB_NAME);
 
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -134,6 +137,21 @@ const openBookContentDb = (): Promise<IDBDatabase> => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error('打开书籍内容数据库失败'));
   });
+
+const openBookContentDb = (): Promise<IDBDatabase> => {
+  if (dbPromise) return dbPromise;
+
+  dbPromise = openBookContentDbRequest(BOOK_CONTENT_DB_VERSION)
+    .catch((error) => {
+      if (isVersionError(error)) {
+        return openBookContentDbRequest();
+      }
+      throw error;
+    })
+    .catch((error) => {
+      dbPromise = null;
+      throw error;
+    });
 
   return dbPromise;
 };

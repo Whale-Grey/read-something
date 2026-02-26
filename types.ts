@@ -82,6 +82,9 @@ export interface ReaderBookState {
   fontOptions?: ReaderFontState[];
   selectedFontId?: string;
   readingPosition?: ReaderPositionState;
+  visibleRatio?: number;
+  activeChapterRenderedText?: string;
+  visibleTextRange?: { start: number; end: number };
   ttsResumePosition?: {
     chapterIndex: number;
     startParagraphIndex: number;
@@ -322,6 +325,7 @@ export interface ReaderMoreFeatureSettings {
   autoChatSummaryTriggerCount: number;
   autoBookSummaryEnabled: boolean;
   autoBookSummaryTriggerChars: number;
+  readingContextIgnorePanelClip: boolean;
   summaryApiEnabled: boolean;
   summaryApiPresetId: string | null;
   summaryApi: ReaderSummaryApiSettings;

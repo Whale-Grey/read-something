@@ -1,7 +1,7 @@
-import { ApiConfig, Book, QuizConfig, QuizQuestion } from '../types';
+import { ApiConfig, Book, QuizConfig, QuizQuestion, ReaderPositionState } from '../types';
 import { Persona, Character, WorldBookEntry } from '../components/settings/types';
 import { getBookContent, StoredBookContent } from './bookContentStorage';
-import { callAiModel, sanitizeTextForAiPrompt, buildCharacterWorldBookSections, formatWorldBookSection, applyTemplatePlaceholders } from './readerAiEngine';
+import { callAiModel, sanitizeTextForAiPrompt, buildCharacterWorldBookSections, formatWorldBookSection, applyTemplatePlaceholders, buildReadingContextSnapshot } from './readerAiEngine';
 
 // ─── 获取书籍的阅读进度对应的最大章节索引 ───
 
@@ -44,6 +44,7 @@ export const prepareBookContexts = async (
   books: Book[],
   bookIds: string[],
   readingExcerptCharCount: number,
+  readingContextIgnorePanelClip?: boolean,
 ): Promise<BookAiContext[]> => {
   const results: BookAiContext[] = [];
 
@@ -54,8 +55,6 @@ export const prepareBookContexts = async (
     const stored = await getBookContent(bookId);
     if (!stored) continue;
 
-    const maxIdx = getMaxChapterIndexByProgress(book, stored);
-
     // 1. 收集阅读进度前的前情提要总结卡片
     const globalOffset = getReadingGlobalCharOffset(book, stored);
     const summaryCards = (stored.bookSummaryCards || [])
@@ -63,43 +62,50 @@ export const prepareBookContexts = async (
       .sort((a, b) => a.start - b.start);
     const summaryText = summaryCards.map((c) => c.content).filter(Boolean).join('\n');
 
-    // 2. 提取阅读位置前的原文（取尾部 readingExcerptCharCount 字符）
-    let excerptText = '';
-    if (stored.chapters && stored.chapters.length > 0 && maxIdx >= 0) {
-      const readerPos = stored.readerState?.readingPosition;
-      let fullTextUpToPosition = '';
-
-      // 拼接到阅读位置的章节文本
-      if (readerPos && readerPos.chapterIndex !== null && readerPos.chapterIndex !== undefined) {
-        for (let i = 0; i < readerPos.chapterIndex; i++) {
-          fullTextUpToPosition += sanitizeTextForAiPrompt(stored.chapters[i]?.content || '');
-        }
-        // 最后一章只取到 chapterCharOffset
-        const lastChapterText = sanitizeTextForAiPrompt(stored.chapters[readerPos.chapterIndex]?.content || '');
-        if (readerPos.chapterCharOffset > 0) {
-          fullTextUpToPosition += lastChapterText.slice(0, readerPos.chapterCharOffset);
-        } else {
-          fullTextUpToPosition += lastChapterText;
-        }
-      } else {
-        // fallback: 按进度百分比拼接
-        for (let i = 0; i <= maxIdx; i++) {
-          fullTextUpToPosition += sanitizeTextForAiPrompt(stored.chapters[i]?.content || '');
-        }
+    // 2. 使用 buildReadingContextSnapshot 提取阅读位置附近原文（与消息界面对齐）
+    let readingPosition: ReaderPositionState | null = stored.readerState?.readingPosition || null;
+    if (!readingPosition) {
+      // fallback: 从阅读进度百分比合成 readingPosition
+      const totalLength = stored.fullText?.length
+        || stored.chapters?.reduce((sum, ch) => sum + (ch.content || '').length, 0) || 0;
+      const progress = book.progress || 0;
+      if (totalLength > 0) {
+        const maxIdx = getMaxChapterIndexByProgress(book, stored);
+        readingPosition = {
+          chapterIndex: maxIdx >= 0 ? maxIdx : null,
+          chapterCharOffset: 0,
+          globalCharOffset: Math.floor((progress / 100) * totalLength),
+          scrollRatio: 0,
+          totalLength,
+          updatedAt: 0,
+        };
       }
-
-      excerptText = fullTextUpToPosition.slice(-readingExcerptCharCount);
-    } else if (stored.fullText) {
-      const charEnd = globalOffset;
-      excerptText = sanitizeTextForAiPrompt(
-        stored.fullText.slice(Math.max(0, charEnd - readingExcerptCharCount), charEnd),
-      );
     }
+
+    const storedVisibleTextRange = stored.readerState?.visibleTextRange || null;
+    const ignoreClip = !!readingContextIgnorePanelClip;
+    const snapshot = buildReadingContextSnapshot({
+      chapters: stored.chapters || [],
+      bookText: stored.fullText || '',
+      highlightRangesByChapter: stored.readerState?.highlightsByChapter || {},
+      readingPosition,
+      visibleRatio: stored.readerState?.visibleRatio ?? 0,
+      excerptCharCount: readingExcerptCharCount,
+      activeChapterRenderedText: stored.readerState?.activeChapterRenderedText || '',
+      visibleTextRange: storedVisibleTextRange,
+      snapContextEndToSentence: ignoreClip && !storedVisibleTextRange,
+    });
+
+    const excerptText = snapshot.excerpt;
+    const highlightedSnippets = snapshot.highlightedSnippets;
 
     if (summaryText || excerptText) {
       let context = '';
       if (summaryText) context += `\u3010\u524D\u6587\u6897\u6982\u3011\n${summaryText}\n\n`;
       if (excerptText) context += `\u3010\u5F53\u524D\u9605\u8BFB\u4F4D\u7F6E\u9644\u8FD1\u539F\u6587\u3011\n${excerptText}`;
+      if (highlightedSnippets.length > 0) {
+        context += `\n\n\u3010\u7528\u6237\u5212\u7EBF\u6807\u6CE8\u7684\u7247\u6BB5\u3011\n${highlightedSnippets.join('\n')}`;
+      }
       results.push({ bookId, title: book.title, context: context.trim() });
     }
   }

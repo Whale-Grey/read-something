@@ -1035,6 +1035,7 @@ export const buildReadingContextSnapshot = (params: {
   excerptCharCount?: number;
   visibleTextRange?: VisibleTextRange | null;
   activeChapterRenderedText?: string;
+  snapContextEndToSentence?: boolean;
 }): ReadingContextSnapshot => {
   const { chapters, bookText, highlightRangesByChapter, readingPosition } = params;
   const visibleRatio = clamp(params.visibleRatio || 0, 0, 1);
@@ -1148,6 +1149,14 @@ export const buildReadingContextSnapshot = (params: {
       if (visibleSentenceBoundary !== null) {
         contextEnd = visibleSentenceBoundary;
       }
+    }
+  }
+
+  if (params.snapContextEndToSentence && !hasVisibleTextRangeHint && contextEnd > 0) {
+    const searchStart = Math.max(0, contextEnd - 300);
+    const boundary = resolveVisibleSentenceBoundary(joinedBookText, searchStart, contextEnd);
+    if (boundary !== null && boundary > searchStart) {
+      contextEnd = boundary;
     }
   }
 

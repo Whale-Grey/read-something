@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, Trash2, AlertTriangle, Image as ImageIcon, Link as LinkIcon, Loader2, X, RefreshCw, Save, Edit2, Paintbrush, Wrench, MessageSquareText, Eraser, Volume2, Play, Square, Download } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Trash2, AlertTriangle, Image as ImageIcon, Link as LinkIcon, Loader2, X, RefreshCw, Save, Edit2, Paintbrush, Wrench, MessageSquareText, Eraser, Volume2, Play, Square, Download, HelpCircle } from 'lucide-react';
 import { ApiPreset, AppSettings, ReaderBookState, ReaderSummaryCard, TtsConfig, TtsPlaybackState } from '../types';
 import type { TtsPreset } from '../types';
 import { validateTtsConfig } from '../utils/ttsEngine';
@@ -487,6 +487,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
   const [ttsExportIncludeSubtitles, setTtsExportIncludeSubtitles] = useState(false);
   const [isExportingTtsAudiobook, setIsExportingTtsAudiobook] = useState(false);
   const [ttsExportStatus, setTtsExportStatus] = useState<{ text: string; skippedReasons: string[] } | null>(null);
+  const [showPanelClipHelp, setShowPanelClipHelp] = useState(false);
   const [cssApplySuccess, setCssApplySuccess] = useState(false);
   const [cssClearSuccess, setCssClearSuccess] = useState(false);
   const [cssSaveSuccess, setCssSaveSuccess] = useState(false);
@@ -1322,6 +1323,26 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                       <div className="flex items-center justify-between">
                         <span className={`text-sm font-bold ${headingClass}`}>回复最大条数</span>
                         {numInput(featureSettings.replyBubbleMax, (v) => onUpdateFeatureSettings({ replyBubbleMax: v }))}
+                      </div>
+                    </div>
+
+                    <div className="w-full h-[1px] bg-slate-300/20 my-0" />
+
+                    {/* 上文整屏为准 */}
+                    <div className="py-5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-sm font-bold ${headingClass}`}>上文整屏为准</span>
+                          <button type="button" onClick={() => setShowPanelClipHelp((v) => !v)} className="text-slate-400 hover:text-slate-500 transition-colors">
+                            <HelpCircle size={14} />
+                          </button>
+                        </div>
+                        <Toggle checked={featureSettings.readingContextIgnorePanelClip} onClick={() => onUpdateFeatureSettings({ readingContextIgnorePanelClip: !featureSettings.readingContextIgnorePanelClip })} pressedClass={pressedClass} />
+                      </div>
+                      <div className={`grid transition-[grid-template-rows] duration-300 ${showPanelClipHelp ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                        <div className="overflow-hidden">
+                          <div className="text-xs text-slate-500 mt-1">开启后char读到的原文截至整屏底部而非消息区上方</div>
+                        </div>
                       </div>
                     </div>
 

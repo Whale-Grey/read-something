@@ -80,6 +80,7 @@ const DEFAULT_READER_MORE_SETTINGS = {
     autoChatSummaryTriggerCount: 500,
     autoBookSummaryEnabled: false,
     autoBookSummaryTriggerChars: 5000,
+    readingContextIgnorePanelClip: false,
     summaryApiEnabled: false,
     summaryApiPresetId: null as string | null,
     summaryApi: {
@@ -258,6 +259,10 @@ const normalizeAppSettings = (raw: unknown): AppSettings => {
         typeof featureSource.autoBookSummaryTriggerChars === 'number' && Number.isFinite(featureSource.autoBookSummaryTriggerChars)
           ? Math.round(featureSource.autoBookSummaryTriggerChars)
           : DEFAULT_READER_MORE_SETTINGS.feature.autoBookSummaryTriggerChars,
+      readingContextIgnorePanelClip:
+        typeof featureSource.readingContextIgnorePanelClip === 'boolean'
+          ? featureSource.readingContextIgnorePanelClip
+          : DEFAULT_READER_MORE_SETTINGS.feature.readingContextIgnorePanelClip,
       summaryApiEnabled:
         typeof featureSource.summaryApiEnabled === 'boolean'
           ? featureSource.summaryApiEnabled
@@ -2359,6 +2364,7 @@ const App: React.FC = () => {
             worldBookEntries={worldBookEntries}
             apiConfig={apiConfig}
             readingExcerptCharCount={appSettings.readerMore.feature.readingExcerptCharCount}
+            readingContextIgnorePanelClip={appSettings.readerMore.feature.readingContextIgnorePanelClip}
             showNotification={showNotification}
             ragApiConfigResolver={resolveRagApiConfig}
           />

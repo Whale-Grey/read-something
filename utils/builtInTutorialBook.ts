@@ -12,7 +12,7 @@ import {
 
 export const BUILT_IN_TUTORIAL_BOOK_ID = '__built_in_tutorial__';
 /** Bump this number whenever tutorial content is changed so existing users get the update. */
-export const BUILT_IN_TUTORIAL_VERSION = 3.6;
+export const BUILT_IN_TUTORIAL_VERSION = 3.7;
 
 const TUTORIAL_UNREAD_KEY = '__built_in_tutorial_unread__';
 export const isTutorialUnread = (): boolean => {
@@ -36,6 +36,15 @@ const img = (imageRef: string, alt: string, w?: number, h?: number): ReaderConte
 /*  更新记录                                                            */
 /* ------------------------------------------------------------------ */
 const CH0_CONTENT = `更新记录
+
+-更新时间：2026.02.26
+
+本次更新内容：
+
+1.新增书签所在章节显示
+
+2.新增char阅读文字范围开关
+在阅读界面点击更多设置→功能面板中新增了"上文整屏为准"开关。开启后，char读到的原文截至整屏底部而非消息区上方，共读集中的char阅读范围也会同步。
 
 -更新时间：2026.02.25
 
@@ -80,6 +89,13 @@ const CH0_CONTENT = `更新记录
 
 const CH0_BLOCKS: ReaderContentBlock[] = [
   text('更新记录'),
+  text(`-更新时间：2026.02.26`),
+  text(`本次更新内容：
+
+1.新增书签所在章节显示
+
+2.新增char阅读文字范围开关
+在阅读界面点击更多设置→功能面板中新增了"上文整屏为准"开关。开启后，char读到的原文截至整屏底部而非消息区上方，共读集中的AI阅读范围也会同步。`),
   text(`-更新时间：2026.02.25`),
   text(`本次更新内容：
 
@@ -567,6 +583,213 @@ const CH6_BLOCKS: ReaderContentBlock[] = [
 ];
 
 /* ------------------------------------------------------------------ */
+/*  免费TTS部署教程                                                     */
+/* ------------------------------------------------------------------ */
+const CH7_CONTENT = `第七章 免费TTS API 部署指南
+
+部署一个免费的、兼容 OpenAI 格式的文字转语音 API，无需编程知识。
+
+第一部分：部署（约 5 分钟）
+
+第 1 步：注册 Hugging Face 账号
+
+1. 打开 https://huggingface.co/join
+2. 填写用户名、邮箱、密码，完成注册
+3. 去邮箱点击验证链接
+
+第 2 步：一键复制部署
+
+1. 打开这个链接：
+https://huggingface.co/spaces/Amygdala-0/openai-edge-tts?duplicate=true
+2. 页面会弹出「Duplicate this Space」窗口
+3. 按以下方式填写：
+Owner：选你自己的用户名
+Space name：保持默认 openai-edge-tts，或改成你喜欢的名字
+Visibility：选 Public（公开）
+4. 点击 Duplicate Space
+5. 等待 2-5 分钟，页面上方状态变为 Running 就说明部署成功
+
+第 3 步：确认部署成功
+
+部署成功后，打开你的 Space 页面，应该能看到类似这样的内容：
+{
+  "service": "OpenAI Edge TTS",
+  "status": "running",
+  ...
+}
+看到这个就说明一切正常！
+
+第二部分：获取你的 API 地址
+
+你的 API 地址格式为：
+https://你的用户名-openai-edge-tts.hf.space
+
+比如你的 Hugging Face 用户名是 zhangsan，那你的地址就是：
+https://zhangsan-openai-edge-tts.hf.space
+
+注意：如果你在第 2 步改了 Space name，把上面的 openai-edge-tts 替换成你填的名字。
+
+第三部分：在读点书中使用
+
+打开读点书的TTS配置时，服务商选择自定义TTS，按下表填写：
+
+【必填项】
+API 地址：https://你的用户名-openai-edge-tts.hf.space/v1/audio/speech
+API Key：随便填一个或留空（如 sk-1234，填什么都行）
+Model / 模型：tts-1
+Voice / 语音：从下方语音列表中选一个（如 zh-CN-XiaoxiaoNeural）
+
+【Model 可选值】
+tts-1（推荐，最通用）
+tts-1-hd（也可以，效果相同）
+gpt-4o-mini-tts（也可以，效果相同）
+三个 model 效果完全一样，一般填 tts-1 就行。
+
+第四部分：语音列表
+
+中文语音（推荐）
+zh-CN-XiaoxiaoNeural - 女 · 自然温柔（推荐）
+zh-CN-XiaoyiNeural - 女 · 活泼可爱
+zh-CN-YunxiNeural - 男 · 年轻阳光
+zh-CN-YunjianNeural - 男 · 沉稳大气
+zh-CN-YunxiaNeural - 男 · 少年感
+zh-CN-liaoning-XiaobeiNeural - 女 · 东北口音
+zh-TW-HsiaoChenNeural - 女 · 台湾腔
+zh-TW-YunJheNeural - 男 · 台湾腔
+
+英文语音
+en-US-AvaNeural - 女
+en-US-AndrewNeural - 男
+en-US-JennyNeural - 女
+en-US-GuyNeural - 男
+en-US-EmmaNeural - 女
+en-US-BrianNeural - 男
+
+更多语言和语音可以去这里筛选试听：https://tts.travisvn.com/
+
+常见问题
+
+Q：页面显示 "Building" 很久怎么办？
+A：首次构建需要 2-5 分钟，耐心等待。如果超过 10 分钟还没好，刷新页面看看。
+
+Q：页面显示 "Runtime Error" 怎么办？
+A：点击页面上的 Logs 标签查看错误日志。最常见原因是 HF 平台临时故障，等几分钟再点 Restart 按钮重试。
+
+Q：API 地址填了但报错？
+A：不同软件要求的格式不同，试试以下几种：
+https://你的用户名-openai-edge-tts.hf.space/v1/audio/speech
+https://你的用户名-openai-edge-tts.hf.space/v1
+https://你的用户名-openai-edge-tts.hf.space
+
+Q：Space 一段时间不用会休眠吗？
+A：是的，免费 Space 闲置一段时间后会自动休眠。下次请求时会自动唤醒，首次唤醒可能需要等 30 秒左右。
+
+Q：这个服务收费吗？
+A：完全免费。它使用的是微软 Edge 浏览器内置的免费 TTS 服务。
+
+Q：支持哪些音频格式？
+A：默认输出 mp3。也支持 wav、aac、opus、flac（需要软件端指定 response_format）。`;
+
+const CH7_BLOCKS: ReaderContentBlock[] = [
+  text('免费TTS API 部署指南'),
+  text('部署一个免费的、兼容 OpenAI 格式的文字转语音 API，无需编程知识。'),
+  text(`第一部分：部署（约 5 分钟）
+
+第 1 步：注册 Hugging Face 账号
+
+1. 打开 https://huggingface.co/join
+2. 填写用户名、邮箱、密码，完成注册
+3. 去邮箱点击验证链接`),
+  text(`第 2 步：一键复制部署
+
+1. 打开这个链接：
+https://huggingface.co/spaces/Amygdala-0/openai-edge-tts?duplicate=true
+2. 页面会弹出「Duplicate this Space」窗口
+3. 按以下方式填写：
+Owner：选你自己的用户名
+Space name：保持默认 openai-edge-tts，或改成你喜欢的名字
+Visibility：选 Public（公开）
+4. 点击 Duplicate Space
+5. 等待 2-5 分钟，页面上方状态变为 Running 就说明部署成功`),
+  text(`第 3 步：确认部署成功
+
+部署成功后，打开你的 Space 页面，应该能看到类似这样的内容：
+{
+  "service": "OpenAI Edge TTS",
+  "status": "running",
+  ...
+}
+看到这个就说明一切正常！`),
+  text(`第二部分：获取你的 API 地址
+
+你的 API 地址格式为：
+https://你的用户名-openai-edge-tts.hf.space
+
+比如你的 Hugging Face 用户名是 zhangsan，那你的地址就是：
+https://zhangsan-openai-edge-tts.hf.space
+
+注意：如果你在第 2 步改了 Space name，把上面的 openai-edge-tts 替换成你填的名字。`),
+  text(`第三部分：在读点书中使用
+
+打开读点书的TTS配置时，服务商选择自定义TTS，按下表填写：
+
+【必填项】
+API 地址：https://你的用户名-openai-edge-tts.hf.space/v1/audio/speech
+API Key：随便填一个或留空（如 sk-1234，填什么都行）
+Model / 模型：tts-1
+Voice / 语音：从下方语音列表中选一个（如 zh-CN-XiaoxiaoNeural）
+
+【Model 可选值】
+tts-1（推荐，最通用）
+tts-1-hd（也可以，效果相同）
+gpt-4o-mini-tts（也可以，效果相同）
+三个 model 效果完全一样，一般填 tts-1 就行。`),
+  text(`第四部分：语音列表
+
+中文语音（推荐）
+zh-CN-XiaoxiaoNeural - 女 · 自然温柔（推荐）
+zh-CN-XiaoyiNeural - 女 · 活泼可爱
+zh-CN-YunxiNeural - 男 · 年轻阳光
+zh-CN-YunjianNeural - 男 · 沉稳大气
+zh-CN-YunxiaNeural - 男 · 少年感
+zh-CN-liaoning-XiaobeiNeural - 女 · 东北口音
+zh-TW-HsiaoChenNeural - 女 · 台湾腔
+zh-TW-YunJheNeural - 男 · 台湾腔
+
+英文语音
+en-US-AvaNeural - 女
+en-US-AndrewNeural - 男
+en-US-JennyNeural - 女
+en-US-GuyNeural - 男
+en-US-EmmaNeural - 女
+en-US-BrianNeural - 男
+
+更多语言和语音可以去这里筛选试听：https://tts.travisvn.com/`),
+  text(`常见问题
+
+Q：页面显示 "Building" 很久怎么办？
+A：首次构建需要 2-5 分钟，耐心等待。如果超过 10 分钟还没好，刷新页面看看。
+
+Q：页面显示 "Runtime Error" 怎么办？
+A：点击页面上的 Logs 标签查看错误日志。最常见原因是 HF 平台临时故障，等几分钟再点 Restart 按钮重试。
+
+Q：API 地址填了但报错？
+A：不同软件要求的格式不同，试试以下几种：
+https://你的用户名-openai-edge-tts.hf.space/v1/audio/speech
+https://你的用户名-openai-edge-tts.hf.space/v1
+https://你的用户名-openai-edge-tts.hf.space
+
+Q：Space 一段时间不用会休眠吗？
+A：是的，免费 Space 闲置一段时间后会自动休眠。下次请求时会自动唤醒，首次唤醒可能需要等 30 秒左右。
+
+Q：这个服务收费吗？
+A：完全免费。它使用的是微软 Edge 浏览器内置的免费 TTS 服务。
+
+Q：支持哪些音频格式？
+A：默认输出 mp3。也支持 wav、aac、opus、flac（需要软件端指定 response_format）。`),
+];
+
+/* ------------------------------------------------------------------ */
 /*  组装章节                                                            */
 /* ------------------------------------------------------------------ */
 const TUTORIAL_CHAPTERS: Chapter[] = [
@@ -577,6 +800,7 @@ const TUTORIAL_CHAPTERS: Chapter[] = [
   { title: '第四章 设置', content: CH4_CONTENT, blocks: CH4_BLOCKS },
   { title: '第五章 阅读统计', content: CH5_CONTENT, blocks: CH5_BLOCKS },
   { title: '第六章 共读集', content: CH6_CONTENT, blocks: CH6_BLOCKS },
+  { title: '第七章 免费TTS部署教程', content: CH7_CONTENT, blocks: CH7_BLOCKS },
 ];
 
 /** 将所有章节内容拼接为 fullText（以换行分隔） */
