@@ -162,12 +162,16 @@ export class TtsPlaybackController {
     this.emitState();
   }
 
-  resume(): void {
+  async resume(): Promise<void> {
     if (!this.isActive || !this.isPaused) return;
-    this.audio.play().catch(() => { /* ignore */ });
-    this.isPlaying = true;
-    this.isPaused = false;
-    this.emitState();
+    try {
+      await this.audio.play();
+      this.isPlaying = true;
+      this.isPaused = false;
+      this.emitState();
+    } catch {
+      // play() failed — keep isPaused state so user can retry
+    }
   }
 
   stop(): void {
@@ -250,11 +254,12 @@ export class TtsPlaybackController {
     return this.lastEmittedParagraph >= 0 ? this.lastEmittedParagraph : 0;
   }
 
-  /** Jump playback to the chunk containing the given paragraph */
-  jumpToParagraph(paragraphIndex: number): void {
-    if (!this.isActive) return;
+  /** Jump playback to the chunk containing the given paragraph.
+   *  Returns true if the paragraph was found in current chunks, false otherwise. */
+  jumpToParagraph(paragraphIndex: number): boolean {
+    if (!this.isActive) return false;
     const chunkIdx = this.chunks.findIndex(c => c.paragraphIndices.includes(paragraphIndex));
-    if (chunkIdx < 0) return;
+    if (chunkIdx < 0) return false;
     this.audio.pause();
     if (this.audio.src && this.audio.src.startsWith('blob:')) {
       URL.revokeObjectURL(this.audio.src);
@@ -263,6 +268,7 @@ export class TtsPlaybackController {
     this.currentChunkIndex = chunkIdx;
     this.lastEmittedParagraph = -1;
     this.playCurrentChunk();
+    return true;
   }
 
   /** Refresh (re-fetch) ALL chunks belonging to the given paragraph */
@@ -412,8 +418,24 @@ export class TtsPlaybackController {
 
       this.prefetchUpcoming();
       this.emitState();
-    } catch {
-      this.callbacks.onError('无法播放音频，请检查浏览器权限');
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        // Autoplay blocked by browser policy — pause instead of destroying TTS state.
+        // User can tap the play/resume button to continue.
+        this.isPaused = true;
+        this.isPlaying = false;
+
+        if (chunk.paragraphIndices.length > 0) {
+          const first = chunk.paragraphIndices[0];
+          this.lastEmittedParagraph = first;
+          this.callbacks.onParagraphChange(first);
+        }
+
+        this.prefetchUpcoming();
+        this.emitState();
+      } else {
+        this.callbacks.onError('无法播放音频，请检查浏览器权限');
+      }
     }
   }
 
@@ -447,8 +469,8 @@ export class TtsPlaybackController {
         if (this.bookId && blob) {
           try {
             await saveTtsAudio(this.bookId, chapterIdx, chunk.text, blob, this.config);
-          } catch {
-            // ignore cache write errors
+          } catch (e) {
+            console.warn('[TTS] 音频缓存写入失败，导出时可能缺少此段音频:', e);
           }
         }
       }

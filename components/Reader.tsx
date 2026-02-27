@@ -3576,6 +3576,12 @@ const Reader: React.FC<ReaderProps> = ({
     const skippedReasons = result.chapterResults
       .filter((item) => !item.exported && item.reason)
       .map((item) => `${item.chapterTitle}：${item.reason as string}`);
+    // Also report chapters that exported but had some chunks skipped due to decode failures
+    for (const item of result.chapterResults) {
+      if (item.exported && item.skippedChunks && item.skippedChunks > 0) {
+        skippedReasons.push(`${item.chapterTitle}：有 ${item.skippedChunks} 段音频解码失败被跳过`);
+      }
+    }
 
     return {
       exportedCount: result.exportedCount,
@@ -3584,10 +3590,6 @@ const Reader: React.FC<ReaderProps> = ({
       skippedReasons,
     };
   }, [activeBook?.id, activeBook?.title, chapters]);
-
-  const handleTtsJumpToParagraph = useCallback((paragraphIndex: number) => {
-    ttsControllerRef.current?.jumpToParagraph(paragraphIndex);
-  }, []);
 
   const handleTtsStartFromParagraph = useCallback((paragraphIndex: number) => {
     if (!ttsConfig || validateTtsConfig(ttsConfig)) return;
@@ -3609,6 +3611,14 @@ const Reader: React.FC<ReaderProps> = ({
     ctrl.start(chunks);
     setTtsResumePosition(undefined);
   }, [ttsConfig, paragraphMeta, selectedChapterIndex, activeBook, prependTitleChunk, makeTtsCallbacks, ensureTtsAudioElement]);
+
+  const handleTtsJumpToParagraph = useCallback((paragraphIndex: number) => {
+    const jumped = ttsControllerRef.current?.jumpToParagraph(paragraphIndex);
+    if (jumped === false) {
+      // Paragraph not in current chunks (e.g. before start position) — rebuild from this paragraph
+      handleTtsStartFromParagraph(paragraphIndex);
+    }
+  }, [handleTtsStartFromParagraph]);
 
   const handleTtsRefreshParagraph = useCallback(async (paragraphIndex: number) => {
     setTtsRefreshingParagraphs(prev => new Set(prev).add(paragraphIndex));

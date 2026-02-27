@@ -17,6 +17,7 @@ export interface ExportCachedTtsAudiobookChapterResult {
   subtitleFileName?: string;
   exported: boolean;
   reason?: string;
+  skippedChunks?: number;
 }
 
 export interface ExportCachedTtsAudiobookResult {
@@ -253,6 +254,7 @@ export async function exportCachedTtsAudiobookZip(
       const decodedBuffers: AudioBuffer[] = [];
       const subtitleCues: Array<{ start: number; end: number; text: string }> = [];
       let subtitleCursor = 0;
+      let skippedChunks = 0;
 
       for (const entry of orderedEntries) {
         try {
@@ -267,6 +269,8 @@ export async function exportCachedTtsAudiobookZip(
           subtitleCursor += decoded.duration;
         } catch {
           // Skip corrupted chunks so export can continue.
+          skippedChunks++;
+          console.warn(`[TTS Export] 音频解码失败，已跳过: "${entry.chunkText.slice(0, 40)}..."`);
         }
       }
 
@@ -275,7 +279,7 @@ export async function exportCachedTtsAudiobookZip(
           chapterIndex,
           chapterTitle,
           exported: false,
-          reason: '该章节缓存音频无法解码',
+          reason: `该章节缓存音频无法解码（共 ${orderedEntries.length} 段全部失败）`,
         });
         continue;
       }
@@ -308,6 +312,7 @@ export async function exportCachedTtsAudiobookZip(
         exported: true,
         audioFileName,
         subtitleFileName,
+        skippedChunks: skippedChunks > 0 ? skippedChunks : undefined,
       });
     }
   } finally {
