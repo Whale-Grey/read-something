@@ -462,7 +462,10 @@ const callSummaryModel = async (prompt: string, config: ApiConfig) => {
   return data?.choices?.[0]?.message?.content?.trim() || '';
 };
 
-const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
+const ReaderMessagePanel = React.forwardRef
+  { toggle: () => void; isOpen: boolean },
+  ReaderMessagePanelProps
+>(({
   isDarkMode,
   apiConfig,
   apiPresets,
@@ -504,7 +507,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
   onTtsResumeFromSaved,
   ttsExportChapterOptions,
   onTtsExportAudiobook,
-}) => {
+}, ref) => {    
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(true);
   const [isAiFabOpening, setIsAiFabOpening] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
@@ -2499,6 +2502,14 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     }, AI_FAB_OPEN_DELAY_MS);
   };
 
+  React.useImperativeHandle(ref, () => ({
+  toggle: () => { 
+    if (isAiPanelOpen) { setIsAiPanelOpen(false); } 
+    else { handleOpenAiPanelFromFab(); }
+  },
+  isOpen: isAiPanelOpen,
+}), [isAiPanelOpen, handleOpenAiPanelFromFab]);  
+  
   const handleLoadMoreMessages = () => {
     const scroller = messagesContainerRef.current;
     if (scroller) {
@@ -3141,9 +3152,6 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
   return (
     <>
       {readerMoreAppearance.bubbleCssApplied && <style>{readerMoreAppearance.bubbleCssApplied}</style>}
-      {!isAiPanelOpen && (
-        <button
-          onClick={handleOpenAiPanelFromFab}
           className={`reader-ai-fab absolute right-6 w-12 h-12 neu-btn rounded-full z-20 ${
             isAiFabOpening ? 'neu-btn-active' : ''
           }`}
@@ -3163,9 +3171,9 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
       )}
 
       <div
-        className={`absolute bottom-0 left-0 right-0 transition-[transform,opacity] ${isPanelDragging ? 'duration-75' : 'duration-500'} ease-in-out z-30 pointer-events-none ${
-          isAiPanelOpen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'
-        }`}
+        className={`absolute top-0 left-0 right-0 transition-[transform,opacity] ${isPanelDragging ? 'duration-75' : 'duration-500'} ease-in-out z-30 pointer-events-none ${
+  isAiPanelOpen ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
+}`}
         style={{
           height: `${resolvedPanelVisualHeight}px`,
         }}
@@ -3173,7 +3181,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
         <div
           ref={aiPanelRef}
           className={`rm-panel absolute bottom-0 left-0 right-0 pointer-events-auto overflow-hidden ${
-            isDarkMode ? 'bg-[#2d3748] rounded-t-3xl rounded-b-none shadow-[0_-5px_20px_rgba(0,0,0,0.4)]' : 'neu-flat rounded-t-3xl rounded-b-none'
+            isDarkMode ? 'bg-[#2d3748] rounded-b-3xl rounded-b-none shadow-[0_-5px_20px_rgba(0,0,0,0.4)]' : 'neu-flat rounded-b-3xl rounded-b-none'
           }`}
           style={{
             height: `${resolvedPanelVisualHeight}px`,
@@ -3604,7 +3612,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
 
     </>
   );
-};
+});
 
 export default ReaderMessagePanel;
 
