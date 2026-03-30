@@ -5269,6 +5269,7 @@ const Reader: React.FC<ReaderProps> = ({
       </div>
 
       <ReaderMessagePanel
+        ref={messagePanelRef}
         isDarkMode={isDarkMode}
         apiConfig={apiConfig}
         apiPresets={apiPresets}
