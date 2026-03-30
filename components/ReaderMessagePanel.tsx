@@ -462,7 +462,7 @@ const callSummaryModel = async (prompt: string, config: ApiConfig) => {
   return data?.choices?.[0]?.message?.content?.trim() || '';
 };
 
-const ReaderMessagePanel = React.forwardRef
+const ReaderMessagePanel = React.forwardRef<
   { toggle: () => void; isOpen: boolean },
   ReaderMessagePanelProps
 >(({
