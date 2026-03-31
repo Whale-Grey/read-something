@@ -11,6 +11,7 @@ import {
   Copy,
   Highlighter,
   List as ListIcon,
+  MessagesSquare,
   MoreHorizontal,
   Pause,
   Play,
@@ -811,6 +812,7 @@ const Reader: React.FC<ReaderProps> = ({
   const ttsAutoStartTaskIdRef = useRef(0);
 
   const readerRootRef = useRef<HTMLDivElement>(null);
+  const messagePanelRef = useRef<{ toggle: () => void; isOpen: boolean } | null>(null);
   const readerViewportContainerRef = useRef<HTMLDivElement>(null);
   const readerScrollRef = useRef<HTMLDivElement>(null);
   const readerScrollbarTrackRef = useRef<HTMLDivElement>(null);
@@ -4328,7 +4330,7 @@ const Reader: React.FC<ReaderProps> = ({
     <div
       ref={readerRootRef}
       className={`flex flex-col h-full min-h-0 relative overflow-hidden transition-colors duration-300 ${
-        isDarkMode ? 'dark-mode bg-[#2d3748] text-slate-300' : 'bg-[#e0e5ec] text-slate-700'
+        isDarkMode ? 'dark-mode bg-[#1c1b19] text-[#d6d4ce]' : 'bg-[#F6F6F6] text-[#363233]'
       }`}
       style={{ paddingTop: `${Math.max(0, safeAreaTop)}px`, paddingBottom: `${Math.max(0, safeAreaBottom)}px` }}
     >
@@ -4340,8 +4342,8 @@ const Reader: React.FC<ReaderProps> = ({
           <div
             className={`w-[min(94vw,760px)] px-8 py-4 rounded-[28px] flex items-center gap-4 border backdrop-blur-md ${
               isDarkMode
-                ? 'bg-[#2d3748]/95 text-slate-200 border-slate-700/70 shadow-[8px_8px_16px_#232b39,-8px_-8px_16px_#374357]'
-                : 'bg-[#e0e5ec]/95 text-slate-600 border-white/20 shadow-[8px_8px_16px_rgba(0,0,0,0.1),-8px_-8px_16px_rgba(255,255,255,0.8)]'
+                ? 'bg-[#1c1b19]/95 text-[#d6d4ce] border-[#3a3832]'
+                : 'bg-[#F6F6F6]/95 text-[#363233] border-[#ddd]'
             }`}
           >
             <AlertCircle size={28} className="text-rose-400 flex-shrink-0" />
@@ -4352,49 +4354,52 @@ const Reader: React.FC<ReaderProps> = ({
         </div>
       )}
 
-      <div className={`flex items-center gap-3 p-4 z-10 transition-colors ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#e0e5ec]'}`}>
-        <button onClick={handleBackClick} className="w-10 h-10 neu-btn rounded-full text-slate-500 hover:text-slate-700 shrink-0">
+      <div className={`flex items-center gap-3 p-4 z-10 transition-colors ${isDarkMode ? 'bg-[#1c1b19]' : 'bg-[#F6F6F6]'}`}>
+        <button onClick={handleBackClick} className={`w-9 h-9 flex items-center justify-center transition-colors shrink-0 ${isDarkMode ? 'text-[#d6d4ce]/60 hover:text-[#d6d4ce]' : 'text-[#363233]/60 hover:text-[#363233]'}`}>
           <ArrowLeft size={20} />
         </button>
-        <div className="flex-1 min-w-0 max-w-[calc(100%-14rem)]">
+        <div className="flex-1 min-w-0 max-w-[calc(100%-18rem)]">
           <div className="text-sm font-serif font-medium opacity-70 truncate">{activeBook?.title || '\u9605\u8bfb\u4e2d'}</div>
         </div>
-        <div className="flex gap-3 shrink-0">
+        <div className="flex gap-1 shrink-0">
           <button
             onClick={toggleTocPanel}
-            className="w-10 h-10 neu-btn rounded-full text-slate-500 hover:text-rose-400"
+            className={`w-9 h-9 flex items-center justify-center transition-colors rounded-lg ${isTocOpen ? (isDarkMode ? 'bg-white/10' : 'bg-black/5') : ''} ${isDarkMode ? 'text-[#d6d4ce]/60 hover:text-[#d6d4ce]' : 'text-[#363233]/50 hover:text-[#363233]'}`}
             title="\u76ee\u5f55"
           >
             <ListIcon size={18} />
           </button>
           <button
             onClick={handleBookmarkButtonClick}
-            className={`w-10 h-10 neu-btn reader-tool-toggle rounded-full ${isBookmarkModalOpen ? 'reader-tool-active' : ''}`}
-            style={typographyToggleStyle}
+            className={`w-9 h-9 flex items-center justify-center transition-colors rounded-lg ${isBookmarkModalOpen ? (isDarkMode ? 'bg-white/10' : 'bg-black/5') : ''} ${isDarkMode ? 'text-[#d6d4ce]/60 hover:text-[#d6d4ce]' : 'text-[#363233]/50 hover:text-[#363233]'}`}
             title={'\u6dfb\u52a0\u4e66\u7b7e'}
           >
             <Bookmark size={18} />
           </button>
           <button
             onClick={handleHighlighterButtonClick}
-            className={`w-10 h-10 neu-btn reader-tool-toggle rounded-full ${isHighlighterVisualActive ? 'reader-tool-active' : ''}`}
-            style={highlighterToggleStyle}
+            className={`w-9 h-9 flex items-center justify-center transition-colors rounded-lg ${isHighlighterVisualActive ? (isDarkMode ? 'bg-white/10' : 'bg-black/5') : ''} ${isDarkMode ? 'text-[#d6d4ce]/60 hover:text-[#d6d4ce]' : 'text-[#363233]/50 hover:text-[#363233]'}`}
             title={'\u8367\u5149\u7b14'}
           >
             <Highlighter size={18} />
           </button>
           <button
             onClick={toggleTypographyPanel}
-            className={`w-10 h-10 neu-btn reader-tool-toggle rounded-full ${isTypographyPanelOpen ? 'reader-tool-active' : ''}`}
-            style={typographyToggleStyle}
+            className={`w-9 h-9 flex items-center justify-center transition-colors rounded-lg ${isTypographyPanelOpen ? (isDarkMode ? 'bg-white/10' : 'bg-black/5') : ''} ${isDarkMode ? 'text-[#d6d4ce]/60 hover:text-[#d6d4ce]' : 'text-[#363233]/50 hover:text-[#363233]'}`}
             title={'\u6587\u5b57\u6837\u5f0f'}
           >
             <Type size={18} />
           </button>
           <button
+            onClick={() => messagePanelRef.current?.toggle()}
+            className={`w-9 h-9 flex items-center justify-center transition-colors rounded-lg ${isDarkMode ? 'text-[#d6d4ce]/60 hover:text-[#d6d4ce]' : 'text-[#363233]/50 hover:text-[#363233]'}`}
+            title="聊天"
+          >
+            <MessagesSquare size={18} />
+          </button>
+          <button
             onClick={() => setIsMoreSettingsOpen(true)}
-            className={`w-10 h-10 neu-btn reader-tool-toggle rounded-full ${isMoreSettingsOpen ? 'reader-tool-active' : ''}`}
-            style={typographyToggleStyle}
+            className={`w-9 h-9 flex items-center justify-center transition-colors rounded-lg ${isMoreSettingsOpen ? (isDarkMode ? 'bg-white/10' : 'bg-black/5') : ''} ${isDarkMode ? 'text-[#d6d4ce]/60 hover:text-[#d6d4ce]' : 'text-[#363233]/50 hover:text-[#363233]'}`}
             title="更多设置"
           >
             <MoreHorizontal size={18} />
@@ -4995,9 +5000,7 @@ const Reader: React.FC<ReaderProps> = ({
         <div
           ref={readerScrollRef}
           aria-busy={isLoadingMaskVisible}
-          className={`reader-scroll-panel reader-content-scroll relative h-full min-h-0 overflow-y-auto rounded-2xl shadow-inner transition-colors px-6 py-6 pb-24 ${
-            isDarkMode ? 'bg-[#1a202c] shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]' : 'bg-[#f0f2f5] shadow-[inset_4px_4px_8px_#d1d9e6,inset_-4px_-4px_8px_#ffffff]'
-          }`}
+          className={`reader-scroll-panel reader-content-scroll relative h-full min-h-0 overflow-y-auto transition-colors px-6 py-6 pb-24`}
           style={readerScrollStyle}
           onScroll={handleReaderScroll}
           onWheel={handleReaderWheel}
