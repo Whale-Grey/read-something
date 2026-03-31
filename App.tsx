@@ -2423,41 +2423,45 @@ const App: React.FC = () => {
       </div>
 
       {/* Bottom Navigation */}
-      <nav 
-        className="absolute left-0 right-0 z-40 px-6 pointer-events-none"
-        style={{ bottom: `${resolvedSafeAreaBottom + 8}px` }}
+      <nav
+        className={`relative z-40 border-t ${isDarkMode ? 'bg-[#2d3748] border-[#3a3832]' : 'bg-[#e0e5ec] border-[#d0cec9]'}`}
+        style={{ paddingBottom: `${resolvedSafeAreaBottom}px` }}
       >
-        <div className={`flex w-full justify-around items-center py-3 px-2 rounded-2xl pointer-events-auto ${isDarkMode ? 'bg-[#2d3748] shadow-[5px_5px_10px_#232b39,-5px_-5px_10px_#374357]' : 'neu-flat'}`}>
-          <button 
+        <div className="flex w-full justify-around items-center py-1.5 px-2">
+          <button
             onClick={() => transitionToView(AppView.LIBRARY)}
             disabled={isViewTransitioning}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${currentView === AppView.LIBRARY ? 'text-rose-400 shadow-[inset_3px_3px_6px_rgba(0,0,0,0.2),inset_-3px_-3px_6px_rgba(255,255,255,0.1)]' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`flex flex-col items-center justify-center gap-0.5 w-14 py-1 transition-all ${currentView === AppView.LIBRARY ? 'text-rose-400' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <LayoutGrid size={22} strokeWidth={currentView === AppView.LIBRARY ? 2.5 : 2} />
+            <span className="text-[10px] font-medium leading-tight">书架</span>
           </button>
-          
+
           <button
             onClick={() => transitionToView(AppView.STATS)}
             disabled={isViewTransitioning}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${currentView === AppView.STATS ? 'text-rose-400 shadow-[inset_3px_3px_6px_rgba(0,0,0,0.2),inset_-3px_-3px_6px_rgba(255,255,255,0.1)]' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`flex flex-col items-center justify-center gap-0.5 w-14 py-1 transition-all ${currentView === AppView.STATS ? 'text-rose-400' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <PieChart size={22} strokeWidth={currentView === AppView.STATS ? 2.5 : 2} />
+            <span className="text-[10px] font-medium leading-tight">统计</span>
           </button>
 
           <button
             onClick={() => transitionToView(AppView.STUDY_HUB)}
             disabled={isViewTransitioning}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${currentView === AppView.STUDY_HUB ? 'text-rose-400 shadow-[inset_3px_3px_6px_rgba(0,0,0,0.2),inset_-3px_-3px_6px_rgba(255,255,255,0.1)]' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`flex flex-col items-center justify-center gap-0.5 w-14 py-1 transition-all ${currentView === AppView.STUDY_HUB ? 'text-rose-400' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <Sparkles size={22} strokeWidth={currentView === AppView.STUDY_HUB ? 2.5 : 2} />
+            <span className="text-[10px] font-medium leading-tight">共读集</span>
           </button>
 
           <button
             onClick={() => transitionToView(AppView.SETTINGS)}
             disabled={isViewTransitioning}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${currentView === AppView.SETTINGS ? 'text-rose-400 shadow-[inset_3px_3px_6px_rgba(0,0,0,0.2),inset_-3px_-3px_6px_rgba(255,255,255,0.1)]' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`flex flex-col items-center justify-center gap-0.5 w-14 py-1 transition-all ${currentView === AppView.SETTINGS ? 'text-rose-400' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <SettingsIcon size={22} strokeWidth={currentView === AppView.SETTINGS ? 2.5 : 2} />
+            <span className="text-[10px] font-medium leading-tight">设置</span>
           </button>
         </div>
       </nav>
