@@ -181,6 +181,131 @@ const LEGACY_DEFAULT_NEUMORPHISM_BUBBLE_CSS_SIGNATURE = normalizeBubbleCssSignat
 const isLegacyDefaultNeumorphismBubbleCss = (css: string) =>
   normalizeBubbleCssSignature(css) === LEGACY_DEFAULT_NEUMORPHISM_BUBBLE_CSS_SIGNATURE;
 
+/* ========== 成就卡片系统 ========== */
+const ACHIEVEMENT_PATTERN = /【成就[：:]\s*(.*?)\s*[｜|]\s*图标[：:]\s*(.*?)\s*[｜|]\s*条件[：:]\s*(.*?)\s*[｜|]\s*奖励[：:]\s*(.*?)\s*[｜|]\s*评价[：:]\s*(.*?)\s*】/;
+
+const AchievementCardInline: React.FC<{
+  name: string;
+  icon: string;
+  condition: string;
+  reward: string;
+  comment: string;
+}> = ({ name, icon, condition, reward, comment }) => (
+  <div
+    style={{
+      position: 'relative',
+      width: '100%',
+      maxWidth: '320px',
+      margin: '4px auto',
+      borderRadius: '16px',
+      overflow: 'hidden',
+      backgroundColor: '#3a2a1a',
+      backgroundImage: 'radial-gradient(circle, #4a3728 1px, transparent 1px)',
+      backgroundSize: '8px 8px',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)',
+      padding: '18px 16px 14px',
+      fontFamily: "system-ui, -apple-system, 'Noto Sans SC', sans-serif",
+      color: '#f5edd6',
+    }}
+  >
+    {/* 达成标签 */}
+    <div
+      style={{
+        position: 'absolute',
+        top: '10px',
+        right: '12px',
+        background: 'rgba(211, 84, 94, 0.9)',
+        color: '#fff',
+        fontSize: '10px',
+        fontWeight: 700,
+        padding: '2px 8px',
+        borderRadius: '4px',
+        letterSpacing: '1px',
+        transform: 'rotate(2deg)',
+      }}
+    >
+      ✦ 达成!
+    </div>
+
+    {/* 图标 + 标题 */}
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', paddingRight: '50px' }}>
+      <div
+        style={{
+          fontSize: '36px',
+          lineHeight: 1,
+          flexShrink: 0,
+          filter: 'drop-shadow(2px 2px 4px rgba(0,0,0,0.4))',
+        }}
+      >
+        {icon.trim()}
+      </div>
+      <div
+        style={{
+          fontSize: '18px',
+          fontWeight: 900,
+          lineHeight: 1.2,
+          color: '#ffe4a0',
+          textShadow: '1px 1px 2px rgba(0,0,0,0.5)',
+          wordBreak: 'break-word',
+        }}
+      >
+        {name.trim()}
+      </div>
+    </div>
+
+    {/* 条件 & 奖励 */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', marginBottom: '10px' }}>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <span style={{ color: '#d4a574', fontWeight: 700, flexShrink: 0 }}>条件</span>
+        <span style={{ opacity: 0.85 }}>{condition.trim()}</span>
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <span style={{ color: '#d4a574', fontWeight: 700, flexShrink: 0 }}>奖励</span>
+        <span style={{ color: '#ffe4a0' }}>{reward.trim()}</span>
+      </div>
+    </div>
+
+    {/* 评价 */}
+    <div
+      style={{
+        fontSize: '11px',
+        fontStyle: 'italic',
+        opacity: 0.65,
+        borderTop: '1px solid rgba(255,255,255,0.1)',
+        paddingTop: '8px',
+        lineHeight: 1.5,
+        textIndent: '2em',
+      }}
+    >
+      "{comment.trim()}"
+    </div>
+  </div>
+);
+
+const renderBubbleContent = (content: string): React.ReactNode => {
+  const match = content.match(ACHIEVEMENT_PATTERN);
+  if (!match) return content;
+
+  const [fullMatch, achievementName, icon, condition, reward, comment] = match;
+  const beforeText = content.slice(0, match.index);
+  const afterText = content.slice((match.index || 0) + fullMatch.length);
+
+  return (
+    <>
+      {beforeText && <span>{beforeText}</span>}
+      <AchievementCardInline
+        name={achievementName}
+        icon={icon}
+        condition={condition}
+        reward={reward}
+        comment={comment}
+      />
+      {afterText && <span>{afterText}</span>}
+    </>
+  );
+};
+/* ========== 成就卡片系统 结束 ========== */
+
 type SummaryTaskKind = 'chat' | 'book';
 type SummaryTriggerKind = 'auto' | 'manual';
 
@@ -3321,7 +3446,7 @@ const ReaderMessagePanel = React.forwardRef<
                             <div className="opacity-80 break-all">{message.quote.content}</div>
                           </div>
                         )}
-                        <div className="break-words">{message.content}</div>
+                        <div className="break-words">{renderBubbleContent(message.content)}</div>
                       </div>
                     </div>
                   </div>
