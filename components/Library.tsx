@@ -2,6 +2,7 @@
 import { Book as BookIcon, Plus, Clock, Edit2, Check, UserCircle, LogOut, Link2, Search, Filter, MoreVertical, X, Image, Trash2, Link, FileText, FileUp, List, Sparkles, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, LayoutGrid, AlignJustify, HelpCircle, ChevronDown } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { Book, Chapter, ApiConfig, RagPreset } from '../types';
+import RecentBookPanel from './RecentBookPanel';
 import { Persona, Character } from './settings/types';
 import ModalPortal from './ModalPortal';
 import ResolvedImage from './ResolvedImage';
@@ -1609,6 +1610,7 @@ const Library: React.FC<LibraryProps> = ({
 
         {/* Recent Read Card - only in home mode */}
         {mode === 'home' && recentBook && (
+          <>
           <div className="mb-8">
             <h2 className="font-bold mb-4" style={{ fontSize: '24px', color: '#1A1A1A' }}>最近阅读</h2>
             <div
@@ -1643,6 +1645,21 @@ const Library: React.FC<LibraryProps> = ({
               )}
             </div>
           </div>
+
+          {/* 本书面板 */}
+          <div className="mb-8">
+          <RecentBookPanel
+            recentBook={recentBook}
+            books={books}
+            activeCharacterId={activeCharacterId}
+            activePersonaId={activePersonaId}
+            characters={characters}
+            personas={personas}
+            isDarkMode={isDarkMode}
+            apiConfig={apiConfig}
+          />
+          </div>
+          </>
         )}
 
         {/* Grid Header with Search & Filter & Sort - only in shelf mode */}
