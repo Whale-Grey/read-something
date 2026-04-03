@@ -2523,10 +2523,9 @@ const Reader: React.FC<ReaderProps> = ({
         setSelectionPopup(prev => (prev?.type === 'add' ? null : prev));
         return;
       }
-      const rect = range.getBoundingClientRect();
       setSelectionPopup({
-        x: rect.left + rect.width / 2,
-        y: rect.top - 8,
+        x: 0,
+        y: 0,
         type: 'add',
       });
     };
@@ -4102,14 +4101,12 @@ const Reader: React.FC<ReaderProps> = ({
         </>
       )}
 
-      {/* Selection highlight popup */}
+      {/* Selection highlight bottom bar */}
       {selectionPopup && (
         <div
-          className="fixed z-50 flex items-center gap-1 px-3 py-1.5 rounded-full shadow-lg text-sm font-bold"
+          className="fixed z-50 left-0 right-0 flex items-center justify-center gap-4 px-6 py-3 shadow-lg"
           style={{
-            left: selectionPopup.x,
-            top: selectionPopup.y,
-            transform: 'translate(-50%, -100%)',
+            bottom: 0,
             backgroundColor: '#1A1A1A',
             color: '#fff',
             pointerEvents: 'auto',
@@ -4117,19 +4114,35 @@ const Reader: React.FC<ReaderProps> = ({
           onPointerDown={(e) => e.stopPropagation()}
         >
           {selectionPopup.type === 'add' ? (
-            <button
-              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleApplySelectionHighlight(); }}
-              className="flex items-center gap-1 active:opacity-70"
-            >
-              <span style={{ fontSize: '14px' }}>划线</span>
-            </button>
+            <>
+              <button
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleApplySelectionHighlight(); }}
+                className="flex items-center gap-2 px-6 py-2 rounded-full bg-white/15 active:bg-white/25 text-sm font-bold transition-colors"
+              >
+                划线
+              </button>
+              <button
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); window.getSelection()?.removeAllRanges(); setSelectionPopup(null); }}
+                className="flex items-center gap-2 px-6 py-2 rounded-full text-sm text-white/50 active:text-white/80 transition-colors"
+              >
+                取消
+              </button>
+            </>
           ) : (
-            <button
-              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleRemoveHighlight(selectionPopup.removeCharIdx ?? 0); }}
-              className="flex items-center gap-1 active:opacity-70"
-            >
-              <span style={{ fontSize: '14px' }}>取消划线</span>
-            </button>
+            <>
+              <button
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleRemoveHighlight(selectionPopup.removeCharIdx ?? 0); }}
+                className="flex items-center gap-2 px-6 py-2 rounded-full bg-white/15 active:bg-white/25 text-sm font-bold transition-colors"
+              >
+                取消划线
+              </button>
+              <button
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectionPopup(null); }}
+                className="flex items-center gap-2 px-6 py-2 rounded-full text-sm text-white/50 active:text-white/80 transition-colors"
+              >
+                关闭
+              </button>
+            </>
           )}
         </div>
       )}

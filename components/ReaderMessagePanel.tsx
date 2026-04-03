@@ -3343,6 +3343,84 @@ const ReaderMessagePanel = React.forwardRef<
               const isSelectedForDelete = selectedDeleteIdSet.has(message.id);
               const isEditingTarget = editingMessageId === message.id;
 
+              // 解析成就内容，决定渲染方式
+              const achMatch = message.content.match(ACHIEVEMENT_PATTERN);
+              const isAchievementOnly = !isUser && achMatch && !message.content.slice(0, achMatch.index).trim() && !message.content.slice((achMatch.index || 0) + achMatch[0].length).trim();
+              const beforeAchText = achMatch ? message.content.slice(0, achMatch.index).trim() : '';
+              const afterAchText = achMatch ? message.content.slice((achMatch.index || 0) + achMatch[0].length).trim() : '';
+
+              // 渲染普通气泡内容的辅助函数
+              const renderNormalBubble = (content: string, key?: string) => (
+                <div key={key} className={`flex ${isUser ? 'justify-end' : 'justify-start'} ${isDeleteMode ? 'cursor-pointer' : ''}`}
+                  onClick={() => handleBubbleClick(message.id)}>
+                  <div className={`max-w-[88%] flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                    {!isUser && (
+                      <div className={`rm-avatar w-7 h-7 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center ${isDarkMode ? 'bg-[#1a202c]' : 'neu-pressed'}`}>
+                        {renderCharacterAvatar()}
+                      </div>
+                    )}
+                    <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                      <div
+                        className={`rm-bubble ${isUser ? 'rm-bubble-user' : 'rm-bubble-ai'} px-5 py-3 text-sm leading-relaxed transition-colors border-none ${
+                          isUser
+                            ? isDarkMode
+                              ? 'bg-[rgb(var(--theme-500)_/_1)] text-white rounded-2xl rounded-br shadow-md'
+                              : 'bg-[rgb(var(--theme-400)_/_1)] text-white rounded-2xl rounded-br shadow-[5px_5px_10px_#d1d5db,-5px_-5px_10px_#ffffff]'
+                            : isDarkMode
+                            ? 'bg-[#1a202c] text-slate-300 rounded-2xl rounded-bl shadow-md'
+                            : 'neu-flat text-slate-700 rounded-2xl rounded-bl'
+                        } ${isUser ? 'reader-bubble-enter-right' : 'reader-bubble-enter-left'} ${isEditingTarget ? 'ring-2 ring-rose-300' : ''}`}
+                        style={{ fontSize: `${14 * readerMoreAppearance.bubbleFontSizeScale}px` }}
+                        onPointerDown={(event) => handleBubblePointerDown(event, message.id)}
+                        onPointerMove={handleBubblePointerMove}
+                        onPointerUp={handleBubblePointerEnd}
+                        onPointerCancel={handleBubblePointerEnd}
+                        onContextMenu={(event) => handleBubbleContextMenu(event, message.id)}
+                      >
+                        <div className="break-words">{content}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+
+              // 成就独立渲染（不用气泡框）
+              const renderAchievementStandalone = (key?: string) => {
+                if (!achMatch) return null;
+                const [, achName, achIcon, achCondition, , achComment] = achMatch;
+                return (
+                  <div key={key} className={`flex justify-start ${isDeleteMode ? 'cursor-pointer' : ''} w-full px-2`}
+                    onClick={() => handleBubbleClick(message.id)}>
+                    {isDeleteMode && (
+                      <button type="button"
+                        className={`w-5 h-5 rounded-full flex items-center justify-center mr-2 flex-shrink-0 ${isSelectedForDelete ? 'text-rose-400' : isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+                        aria-label="select-message">
+                        {isSelectedForDelete ? <Check size={15} /> : <Square size={15} />}
+                      </button>
+                    )}
+                    <div className="w-full">
+                      <AchievementCardInline name={achName} icon={achIcon} condition={achCondition} comment={achComment} />
+                    </div>
+                  </div>
+                );
+              };
+
+              if (achMatch) {
+                // 有成就内容：成就单独渲染，前后文字如有则放独立气泡
+                return (
+                  <React.Fragment key={message.id}>
+                    {readerMoreAppearance.showMessageTime && (
+                      <div className={`rm-msg-time text-[11px] text-center mb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {formatBubbleClock(message.timestamp)}
+                      </div>
+                    )}
+                    {beforeAchText && renderNormalBubble(beforeAchText, `${message.id}-before`)}
+                    {renderAchievementStandalone(`${message.id}-ach`)}
+                    {afterAchText && renderNormalBubble(afterAchText, `${message.id}-after`)}
+                  </React.Fragment>
+                );
+              }
+
               return (
                 <div
                   key={message.id}
@@ -3350,7 +3428,7 @@ const ReaderMessagePanel = React.forwardRef<
                   onClick={() => handleBubbleClick(message.id)}
                 >
                   <div className={`max-w-[88%] flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-                    {!isUser && !ACHIEVEMENT_PATTERN.test(message.content) && (
+                    {!isUser && (
                       <div
                         className={`rm-avatar w-7 h-7 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center ${
                           isDarkMode ? 'bg-[#1a202c]' : 'neu-pressed'

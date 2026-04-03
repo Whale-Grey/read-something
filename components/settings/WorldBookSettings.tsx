@@ -440,90 +440,90 @@ const WorldBookSettings: React.FC<WorldBookSettingsProps> = ({
                   isEditing ? activeBorderClass : baseBorderClass
                 } ${isDragging ? 'opacity-70 scale-[0.99]' : ''} ${isDragOver ? 'ring-2 ring-rose-300/70' : ''} ${entry.disabled && !isEditing ? 'opacity-50' : ''}`}
               >
-                <div className="flex justify-between items-start mb-2">
+                {/* Row 1: 拖拽 + 开关 + 编辑 + 删除 */}
+                <div className="flex items-center gap-2 mb-2">
                   {!isEditing && (
                     <button
                       type="button"
                       onPointerDown={(event) => beginEntryDrag(entry, event)}
                       onTouchStart={(event) => beginEntryTouchDrag(entry, event)}
-                      className={`mr-3 mt-1 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 touch-none select-none cursor-grab active:cursor-grabbing ${btnClass}`}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 touch-none select-none cursor-grab active:cursor-grabbing flex-shrink-0 ${btnClass}`}
                       style={{ touchAction: 'none' }}
                       aria-label={`拖动排序 ${entry.title}`}
                     >
                       <GripVertical size={18} />
                     </button>
                   )}
-
-                  <div className="flex-1 mr-4">
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={entry.title}
-                        onChange={(event) => updateWorldBookEntry(entry.id, 'title', event.target.value)}
-                        className={`w-full px-4 py-2 text-sm font-bold rounded-lg outline-none mb-2 ${inputClass}`}
-                        placeholder="条目标题"
-                      />
-                    ) : (
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-slate-400 min-w-[2ch]">{index + 1}.</span>
-                          <h3 className={`text-lg font-bold ${headingClass}`}>{entry.title}</h3>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span
-                            className={`text-[10px] px-2 py-0.5 rounded border flex items-center gap-1 font-bold tracking-wide ${
-                              entry.insertPosition === 'BEFORE'
-                                ? 'bg-transparent text-dreamy-500 border-dreamy-400 dark:text-dreamy-300 dark:border-dreamy-500/50'
-                                : 'bg-transparent text-rose-500 border-rose-300 dark:text-rose-300 dark:border-rose-800/50'
-                            }`}
-                          >
-                            {entry.insertPosition === 'BEFORE' ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
-                            {entry.insertPosition === 'BEFORE' ? '角色定义前' : '角色定义后'}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2 flex-shrink-0">
+                  <div className="flex-1" />
+                  <button
+                    onClick={() => updateWorldBookEntry(entry.id, 'disabled', !entry.disabled)}
+                    className={`h-8 px-3 rounded-full text-xs font-bold transition-colors flex-shrink-0 ${
+                      entry.disabled
+                        ? isDarkMode
+                          ? 'bg-slate-700 text-slate-500'
+                          : 'bg-slate-200 text-slate-400'
+                        : isDarkMode
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : 'bg-emerald-100 text-emerald-600'
+                    } ${btnClass}`}
+                    title={entry.disabled ? '已禁用，点击启用' : '已启用，点击禁用'}
+                  >
+                    {entry.disabled ? '已关' : '已开'}
+                  </button>
+                  {isEditing ? (
                     <button
-                      onClick={() => updateWorldBookEntry(entry.id, 'disabled', !entry.disabled)}
-                      className={`h-9 px-3 rounded-full text-xs font-bold transition-colors ${
-                        entry.disabled
-                          ? isDarkMode
-                            ? 'bg-slate-700 text-slate-500'
-                            : 'bg-slate-200 text-slate-400'
-                          : isDarkMode
-                          ? 'bg-emerald-500/20 text-emerald-400'
-                          : 'bg-emerald-100 text-emerald-600'
-                      } ${btnClass}`}
-                      title={entry.disabled ? '已禁用，点击启用' : '已启用，点击禁用'}
+                      onClick={() => setEditingWorldBookId(null)}
+                      className={`h-8 px-3 rounded-full flex items-center justify-center text-emerald-500 flex-shrink-0 ${btnClass}`}
                     >
-                      {entry.disabled ? '已关' : '已开'}
+                      <Check size={16} />
                     </button>
-                    {isEditing ? (
-                      <button
-                        onClick={() => setEditingWorldBookId(null)}
-                        className={`h-9 px-4 rounded-full flex items-center justify-center text-emerald-500 ${btnClass}`}
-                      >
-                        <Check size={18} />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setEditingWorldBookId(entry.id)}
-                        className={`h-9 px-4 rounded-full text-xs text-slate-500 font-medium ${btnClass}`}
-                      >
-                        编辑
-                      </button>
-                    )}
+                  ) : (
                     <button
-                      onClick={() => deleteWorldBookEntry(entry.id)}
-                      className={`w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-500 ${btnClass}`}
+                      onClick={() => setEditingWorldBookId(entry.id)}
+                      className={`h-8 px-3 rounded-full text-xs text-slate-500 font-medium flex-shrink-0 ${btnClass}`}
                     >
-                      <Trash2 size={18} />
+                      编辑
                     </button>
-                  </div>
+                  )}
+                  <button
+                    onClick={() => deleteWorldBookEntry(entry.id)}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-500 flex-shrink-0 ${btnClass}`}
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
+
+                {/* Row 2: 世界书名 */}
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={entry.title}
+                    onChange={(event) => updateWorldBookEntry(entry.id, 'title', event.target.value)}
+                    className={`w-full px-4 py-2 text-sm font-bold rounded-lg outline-none mb-2 ${inputClass}`}
+                    placeholder="条目标题"
+                  />
+                ) : (
+                  <div className="flex items-center gap-2 mb-1 w-full">
+                    <span className="text-xs font-black text-slate-400 flex-shrink-0">{index + 1}.</span>
+                    <h3 className={`text-base font-bold ${headingClass} truncate`}>{entry.title}</h3>
+                  </div>
+                )}
+
+                {/* Row 3: 角色定义前/后标签（仅非编辑模式） */}
+                {!isEditing && (
+                  <div className="w-full mb-2">
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded border inline-flex items-center gap-1 font-bold tracking-wide ${
+                        entry.insertPosition === 'BEFORE'
+                          ? 'bg-transparent text-dreamy-500 border-dreamy-400 dark:text-dreamy-300 dark:border-dreamy-500/50'
+                          : 'bg-transparent text-rose-500 border-rose-300 dark:text-rose-300 dark:border-rose-800/50'
+                      }`}
+                    >
+                      {entry.insertPosition === 'BEFORE' ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
+                      {entry.insertPosition === 'BEFORE' ? '角色定义前' : '角色定义后'}
+                    </span>
+                  </div>
+                )}
 
                 {isEditing ? (
                   <div className="space-y-3 mt-2">
