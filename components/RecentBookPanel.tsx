@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageSquare, FileText, HelpCircle, Trophy, Plus, Trash2, Loader2, ChevronLeft, Check, X } from 'lucide-react';
+import { parse as twemojiParse } from '@twemoji/api';
 import {
   Book, FavoriteQuote, Achievement, QuizSession, Notebook, StudyNote, QuizQuestion, ApiConfig, ReaderHighlightRange,
 } from '../types';
@@ -13,6 +14,24 @@ import {
 import { prepareBookContexts, buildQuizGenerationPrompt, parseQuizQuestions } from '../utils/studyHubAiEngine';
 import { callAiModel } from '../utils/readerAiEngine';
 import ResolvedImage from './ResolvedImage';
+
+// ─── TwemojiIcon ─────────────────────────────────────────────────────────────
+
+const TwemojiIcon: React.FC<{ emoji: string; size?: number }> = ({ emoji, size = 32 }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = emoji;
+    twemojiParse(ref.current, { folder: 'svg', ext: '.svg' });
+  }, [emoji]);
+  return (
+    <span
+      ref={ref}
+      className="twemoji-icon"
+      style={{ display: 'inline-block', width: size, height: size, lineHeight: 1, flexShrink: 0 }}
+    />
+  );
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -280,6 +299,8 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
   // ─── 印章 ─────────────────────────────────────────────────────────────────
 
   const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [longPressAchId, setLongPressAchId] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadAchievements = useCallback(async () => {
     const all = await getAllAchievements();
@@ -766,40 +787,63 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
               <div className={`text-center py-8 text-sm ${subText}`}>暂无成就印章</div>
             ) : (
               achievements.map((ach) => (
-                <div key={ach.id} className="relative rounded-2xl overflow-hidden"
+                <div
+                  key={ach.id}
+                  className="relative rounded-2xl overflow-hidden select-none"
                   style={{
                     backgroundColor: '#262928',
                     backgroundImage: 'radial-gradient(circle, #333736 1.5px, transparent 1.5px)',
                     backgroundSize: '10px 10px',
                     padding: '16px 14px 12px',
-                  }}>
-                  {/* 删除按钮 */}
-                  <button onClick={() => handleDeleteAchievement(ach.id)}
-                    style={{ position: 'absolute', top: '10px', left: '12px', color: 'rgba(165,171,170,0.4)', fontSize: '18px', lineHeight: 1 }}
-                    className="hover:text-rose-300 transition-colors">
-                    ×
-                  </button>
-                  {/* 达成标签 */}
-                  <div style={{ position: 'absolute', top: '10px', right: '12px', fontSize: '10px', color: 'rgba(165,171,170,0.7)', fontWeight: 700 }}>
-                    ✦ 达成!
-                  </div>
+                  }}
+                  onPointerDown={() => {
+                    longPressTimerRef.current = setTimeout(() => setLongPressAchId(ach.id), 600);
+                  }}
+                  onPointerUp={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+                  onPointerCancel={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+                  onContextMenu={(e) => e.preventDefault()}
+                >
                   {/* 图标 + 名称 */}
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginTop: '8px', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '32px', lineHeight: 1, flexShrink: 0 }}>{ach.icon}</span>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
+                    <TwemojiIcon emoji={ach.icon} size={32} />
                     <span style={{ fontSize: '22px', fontWeight: 900, color: '#A5ABAA', lineHeight: 1.2, letterSpacing: '1px', WebkitTextStroke: '6px #1e2120', paintOrder: 'stroke fill' }}>{ach.name}</span>
-                  </div>
-                  {/* 来源 */}
-                  <div style={{ fontSize: '10px', opacity: 0.5, color: '#A5ABAA', marginBottom: '8px' }}>
-                    {ach.characterName}{ach.bookTitle ? ` · ${ach.bookTitle}` : ''} · {formatDate(ach.createdAt)}
                   </div>
                   {/* 条件 */}
                   <div style={{ fontSize: '11px', color: 'rgba(165,171,170,0.9)', marginBottom: '8px', lineHeight: 1.5 }}>
-                    <div><span style={{ opacity: 0.5 }}>条件 </span>{ach.condition}</div>
+                    <span style={{ opacity: 0.5 }}>条件 </span>{ach.condition}
                   </div>
                   {/* 评价 */}
                   {ach.comment && (
-                    <div style={{ fontSize: '11px', fontStyle: 'italic', color: 'rgba(165,171,170,0.7)', borderTop: '1px solid rgba(165,171,170,0.15)', paddingTop: '8px' }}>
+                    <div style={{ fontSize: '11px', fontStyle: 'italic', color: 'rgba(165,171,170,0.7)', borderTop: '1px solid rgba(165,171,170,0.15)', paddingTop: '8px', marginBottom: '6px' }}>
                       "{ach.comment}"
+                    </div>
+                  )}
+                  {/* 来源 — 右下角 */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '10px', opacity: 0.4, color: '#A5ABAA', marginTop: '4px' }}>
+                    {ach.characterName}{ach.bookTitle ? ` · ${ach.bookTitle}` : ''} · {formatDate(ach.createdAt)}
+                  </div>
+
+                  {/* 长按删除弹窗 */}
+                  {longPressAchId === ach.id && (
+                    <div
+                      className="absolute inset-0 flex items-center justify-center rounded-2xl"
+                      style={{ backgroundColor: 'rgba(30,33,32,0.85)', backdropFilter: 'blur(2px)' }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        onClick={() => { handleDeleteAchievement(ach.id); setLongPressAchId(null); }}
+                        className="flex flex-col items-center gap-1 text-rose-400 active:opacity-60 transition-opacity"
+                      >
+                        <Trash2 size={22} />
+                        <span style={{ fontSize: '11px' }}>删除</span>
+                      </button>
+                      <button
+                        onClick={() => setLongPressAchId(null)}
+                        className="absolute top-2 right-3 text-slate-400 active:opacity-60"
+                        style={{ fontSize: '18px', lineHeight: 1 }}
+                      >
+                        ×
+                      </button>
                     </div>
                   )}
                 </div>
