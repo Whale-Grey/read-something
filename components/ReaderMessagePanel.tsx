@@ -182,15 +182,14 @@ const isLegacyDefaultNeumorphismBubbleCss = (css: string) =>
   normalizeBubbleCssSignature(css) === LEGACY_DEFAULT_NEUMORPHISM_BUBBLE_CSS_SIGNATURE;
 
 /* ========== 成就卡片系统 ========== */
-const ACHIEVEMENT_PATTERN = /【成就[：:]\s*(.*?)\s*[｜|]\s*图标[：:]\s*(.*?)\s*[｜|]\s*条件[：:]\s*(.*?)\s*[｜|]\s*奖励[：:]\s*(.*?)\s*[｜|]\s*评价[：:]\s*(.*?)\s*】/;
+const ACHIEVEMENT_PATTERN = /【成就[：:]\s*(.*?)\s*[｜|]\s*图标[：:]\s*(.*?)\s*[｜|]\s*条件[：:]\s*(.*?)\s*(?:[｜|]\s*奖励[：:]\s*(.*?)\s*)?[｜|]\s*评价[：:]\s*(.*?)\s*】/;
 
 const AchievementCardInline: React.FC<{
   name: string;
   icon: string;
   condition: string;
-  reward: string;
   comment: string;
-}> = ({ name, icon, condition, reward, comment }) => (
+}> = ({ name, icon, condition, comment }) => (
   <div
     style={{
       position: 'relative',
@@ -253,15 +252,11 @@ const AchievementCardInline: React.FC<{
       </div>
     </div>
 
-    {/* 条件 & 奖励 */}
+    {/* 条件 */}
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', marginBottom: '10px' }}>
       <div style={{ display: 'flex', gap: '8px' }}>
         <span style={{ color: '#d4a574', fontWeight: 700, flexShrink: 0 }}>条件</span>
         <span style={{ opacity: 0.85 }}>{condition.trim()}</span>
-      </div>
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <span style={{ color: '#d4a574', fontWeight: 700, flexShrink: 0 }}>奖励</span>
-        <span style={{ color: '#ffe4a0' }}>{reward.trim()}</span>
       </div>
     </div>
 
@@ -286,7 +281,7 @@ const renderBubbleContent = (content: string): React.ReactNode => {
   const match = content.match(ACHIEVEMENT_PATTERN);
   if (!match) return content;
 
-  const [fullMatch, achievementName, icon, condition, reward, comment] = match;
+  const [fullMatch, achievementName, icon, condition, , comment] = match;
   const beforeText = content.slice(0, match.index);
   const afterText = content.slice((match.index || 0) + fullMatch.length);
 
@@ -297,7 +292,6 @@ const renderBubbleContent = (content: string): React.ReactNode => {
         name={achievementName}
         icon={icon}
         condition={condition}
-        reward={reward}
         comment={comment}
       />
       {afterText && <span>{afterText}</span>}
@@ -2983,13 +2977,13 @@ const ReaderMessagePanel = React.forwardRef<
       for (const msg of aiMessages) {
         const achMatch = msg.content.match(ACHIEVEMENT_PATTERN);
         if (achMatch) {
-          const [, name, icon, condition, reward, comment] = achMatch;
+          const [, name, icon, condition, , comment] = achMatch;
           const achievement: Achievement = {
             id: `ach-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             name: name.trim(),
             icon: icon.trim(),
             condition: condition.trim(),
-            reward: reward.trim(),
+            reward: '',
             comment: comment.trim(),
             bookId: activeBook?.id || null,
             bookTitle: activeBook?.title || '',

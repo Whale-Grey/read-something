@@ -283,8 +283,7 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className={`rounded-2xl overflow-hidden ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#F3F3F3]'}`}
-      style={{ border: '1px solid #1A1A1A' }}>
+    <div className={`overflow-hidden ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#F3F3F3]'}`}>
 
       {/* Tab bar */}
       <div className={`relative grid grid-cols-4 p-1 ${pressedBg}`}>
@@ -308,7 +307,7 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
       </div>
 
       {/* Content area */}
-      <div className="overflow-y-auto" style={{ maxHeight: '400px' }}>
+      <div className="overflow-y-auto">
 
         {/* ─── 对话 ──────────────────────────────────────────────────────── */}
         {activeTab === '对话' && (
@@ -678,10 +677,9 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                   <div style={{ fontSize: '10px', opacity: 0.4, color: '#ffe4a0', marginBottom: '8px' }}>
                     {ach.characterName}{ach.bookTitle ? ` · ${ach.bookTitle}` : ''} · {formatDate(ach.createdAt)}
                   </div>
-                  {/* 条件 & 奖励 */}
+                  {/* 条件 */}
                   <div style={{ fontSize: '11px', color: '#f5d080', marginBottom: '8px', lineHeight: 1.5 }}>
                     <div><span style={{ opacity: 0.6 }}>条件 </span>{ach.condition}</div>
-                    <div><span style={{ opacity: 0.6 }}>奖励 </span>{ach.reward}</div>
                   </div>
                   {/* 评价 */}
                   {ach.comment && (

@@ -1088,10 +1088,10 @@ const Library: React.FC<LibraryProps> = ({
     }
     if (type === 'USER') {
       if (isDefaultUser) return <ResolvedImage src={defaultUserImg} alt="Default User" className="w-full h-full object-cover" />;
-      return <UserCircle className="text-slate-400 w-3/5 h-3/5" />;
+      return <UserCircle className="text-slate-300 w-3/5 h-3/5" />;
     } else {
       if (isDefaultChar) return <ResolvedImage src={defaultCharImg} alt="Default Char" className="w-full h-full object-cover" />;
-      return <FeatherIcon className="text-slate-400 w-3/5 h-3/5" />;
+      return <FeatherIcon className="text-slate-300 w-3/5 h-3/5" />;
     }
   };
 
@@ -1457,9 +1457,9 @@ const Library: React.FC<LibraryProps> = ({
   return (
     <>
       <div className={`flex-1 flex flex-col p-6 pb-28 overflow-y-auto no-scrollbar ${containerClass}`}>
-        {mode === 'home' && <header className="mb-8 pt-2 relative">
+        {mode === 'home' && <header className="mb-4 pt-2 relative">
           {/* Editable Signature */}
-          <div className="mb-4">
+          <div className="mb-2">
             {isEditingSig ? (
                <div className="flex items-start gap-2">
                  <textarea
@@ -1488,7 +1488,7 @@ const Library: React.FC<LibraryProps> = ({
           </div>
 
           {/* Dual Avatars Area */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
               
               {/* 1. Character Avatar & Menu */}
               <div className="relative" ref={charMenuRef}>
@@ -1496,7 +1496,7 @@ const Library: React.FC<LibraryProps> = ({
                      onClick={() => setIsCharMenuOpen(!isCharMenuOpen)}
                      className="flex flex-col items-center gap-1 cursor-pointer group"
                   >
-                     <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border-2 border-transparent transition-all group-hover:border-rose-300 ${isDarkMode ? 'bg-[#2d3748] shadow-[5px_5px_10px_#232b39,-5px_-5px_10px_#374357]' : 'neu-btn'}`}>
+                     <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border-2 transition-all ${isDarkMode ? 'bg-[#2d3748] shadow-[5px_5px_10px_#232b39,-5px_-5px_10px_#374357]' : 'bg-[#CCCCCC]'}`} style={{ borderColor: '#CCCCCC' }}>
                        {renderAvatar(activeCharacter?.avatar, false, !activeCharacterId, 'CHAR')}
                      </div>
                      <span className="text-[10px] font-bold text-slate-400 group-hover:text-rose-400 transition-colors max-w-[50px] truncate">
@@ -1546,17 +1546,13 @@ const Library: React.FC<LibraryProps> = ({
                   )}
               </div>
 
-              <div className="flex items-center justify-center text-rose-400 -mt-4">
-                 <Link2 size={16} />
-              </div>
-
               {/* 2. User Avatar & Menu */}
               <div className="relative" ref={menuRef}>
                   <div
                      onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                      className="flex flex-col items-center gap-1 cursor-pointer group"
                   >
-                     <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border-2 border-transparent transition-all group-hover:border-rose-300 ${isDarkMode ? 'bg-[#2d3748] shadow-[5px_5px_10px_#232b39,-5px_-5px_10px_#374357]' : 'neu-btn'}`}>
+                     <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border-2 transition-all ${isDarkMode ? 'bg-[#2d3748] shadow-[5px_5px_10px_#232b39,-5px_-5px_10px_#374357]' : 'bg-[#CCCCCC]'}`} style={{ borderColor: '#CCCCCC' }}>
                        {renderAvatar(activePersona?.avatar, !activePersonaId, false, 'USER')}
                      </div>
                      <span className="text-[10px] font-bold text-slate-400 group-hover:text-rose-400 transition-colors max-w-[60px] truncate">
@@ -1628,19 +1624,21 @@ const Library: React.FC<LibraryProps> = ({
                   <span className="absolute top-1.5 right-1.5 w-3 h-3 rounded-full shadow-md animate-pulse z-10" style={{ backgroundColor: 'rgb(var(--theme-500) / 1)' }} />
                 )}
               </div>
-              <div className="flex flex-col flex-1 py-1 gap-1">
-                <h3 className={`text-lg font-bold line-clamp-2 ${headingClass}`}>{recentBook.title}</h3>
-                <p className={`text-sm ${subTextClass}`}>{recentBook.author}</p>
-                <p className="text-xs text-slate-400 mt-1">已读 {recentBook.progress}%</p>
+              <div className="flex flex-col flex-1 py-1 justify-between">
+                <div className="flex flex-col gap-1">
+                  <h3 className={`text-lg font-bold line-clamp-2 ${headingClass}`}>{recentBook.title}</h3>
+                  <p className={`text-sm ${subTextClass}`}>{recentBook.author}</p>
+                </div>
+                <p className="text-xs text-slate-400">已读 {recentBook.progress}%</p>
               </div>
-              
-              {/* Edit Button for Recent Book */}
+
+              {/* Edit Button for Recent Book - bottom right, no circle */}
               {!isBuiltInBook(recentBook.id) && (
               <button
                 onClick={(e) => openEditModal(e, recentBook)}
-                className={`absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-400 opacity-50 hover:opacity-100 transition-all duration-150 active:scale-95 ${isDarkMode ? 'bg-[#2d3748] shadow-[5px_5px_10px_#232b39,-5px_-5px_10px_#374357]' : 'neu-btn'}`}
+                className="absolute bottom-4 right-3 text-slate-300 hover:text-rose-400 opacity-60 hover:opacity-100 transition-all duration-150 active:scale-95"
               >
-                <Edit2 size={16} />
+                <Edit2 size={15} />
               </button>
               )}
             </div>
