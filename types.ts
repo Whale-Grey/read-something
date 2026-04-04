@@ -161,6 +161,7 @@ export interface StudyNote {
     start: number;
     end: number;
     text: string;
+    color?: string;
   };
 }
 

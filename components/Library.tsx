@@ -31,6 +31,7 @@ interface LibraryProps {
   ragPresets: RagPreset[];
   activeRagPresetId: string;
   mode?: 'home' | 'shelf';
+  onJumpToHighlight?: (bookId: string, chapterIndex: number | null, charOffset: number) => void;
 }
 
 // Custom Feather Icon provided by user
@@ -129,7 +130,8 @@ const Library: React.FC<LibraryProps> = ({
   apiConfig,
   ragPresets,
   activeRagPresetId,
-  mode = 'home'
+  mode = 'home',
+  onJumpToHighlight,
 }) => {
   const MODAL_TRANSITION_MS = 240;
   const containerClass = isDarkMode ? 'bg-[#2d3748] text-slate-200' : 'neu-bg text-slate-600';
@@ -1655,6 +1657,7 @@ const Library: React.FC<LibraryProps> = ({
             personas={personas}
             isDarkMode={isDarkMode}
             apiConfig={apiConfig}
+            onJumpToHighlight={onJumpToHighlight}
           />
           </div>
           </>

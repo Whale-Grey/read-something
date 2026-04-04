@@ -2317,6 +2317,7 @@ const App: React.FC = () => {
             ragPresets={effectiveRagPresets}
             activeRagPresetId={activeRagPresetId}
             mode="home"
+            onJumpToHighlight={handleJumpToBookHighlight}
           />
         )}
         {currentView === AppView.SHELF && (
@@ -2340,6 +2341,7 @@ const App: React.FC = () => {
             ragPresets={effectiveRagPresets}
             activeRagPresetId={activeRagPresetId}
             mode="shelf"
+            onJumpToHighlight={handleJumpToBookHighlight}
           />
         )}
         {currentView === AppView.SETTINGS && (

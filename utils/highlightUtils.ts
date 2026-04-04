@@ -1,7 +1,11 @@
 import type { Chapter, ReaderHighlightRange, ReaderPositionState } from '../types';
 import { splitReaderParagraphs, dropLeadingDuplicateTitleParagraph, normalizeReaderLayoutText } from './readerTextNormalize';
 
-export const PRESET_HIGHLIGHT_COLORS = ['#FFE066', '#FFD6A5', '#FFADAD', '#C7F9CC', '#A0C4FF', '#D7B5FF'];
+export const PRESET_HIGHLIGHT_COLORS = ['#FFE066', '#BAE6FD', '#A7F3D0', '#FCA5A5'];
+export const UNDERLINE_STYLE_WAVY = 'underline-wavy';
+export const UNDERLINE_STYLE_SOLID = 'underline-solid';
+export const isUnderlineStyle = (color: string): boolean =>
+  color === UNDERLINE_STYLE_WAVY || color === UNDERLINE_STYLE_SOLID;
 
 export interface ResolvedHighlightItem {
   id: string;

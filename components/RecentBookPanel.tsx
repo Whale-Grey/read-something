@@ -48,6 +48,7 @@ interface RecentBookPanelProps {
   personas: Persona[];
   isDarkMode: boolean;
   apiConfig: ApiConfig;
+  onJumpToHighlight?: (bookId: string, chapterIndex: number | null, charOffset: number) => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -84,6 +85,7 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
   personas,
   isDarkMode,
   apiConfig,
+  onJumpToHighlight,
 }) => {
   const [activeTab, setActiveTab] = useState<TabKey>('对话');
 
@@ -96,6 +98,33 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
   const borderCol = isDarkMode ? 'border-slate-600' : 'border-slate-200';
 
   const activeChar = characters.find((c) => c.id === activeCharacterId) || null;
+
+  // ─── 划线样式辅助 ──────────────────────────────────────────────────────────
+
+  const handleJumpToChapterHighlight = (chapterKey: string, charOffset: number) => {
+    if (!onJumpToHighlight) return;
+    const chapterIndex = chapterKey === 'full' ? null : (() => {
+      const m = chapterKey.match(/^chapter-(\d+)$/);
+      return m ? parseInt(m[1], 10) : null;
+    })();
+    onJumpToHighlight(recentBook.id, chapterIndex, charOffset);
+  };
+
+  const renderHighlightBadge = (color: string) => {
+    const isUnderline = color === 'underline-wavy' || color === 'underline-solid';
+    if (isUnderline) {
+      return (
+        <span
+          className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+          style={{
+            textDecoration: `underline ${color === 'underline-wavy' ? 'wavy' : 'solid'} currentColor`,
+            textDecorationThickness: '1.5px',
+          }}
+        >A</span>
+      );
+    }
+    return <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />;
+  };
 
   // ─── 对话 ─────────────────────────────────────────────────────────────────
 
@@ -500,14 +529,26 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                   <div className={`text-xs font-bold uppercase tracking-wider ${subText} mt-2`}>划线</div>
 
                   {/* Highlights with notes */}
-                  {highlightNotesList.map(({ note, nb }) => (
+                  {highlightNotesList.map(({ note, nb }) => {
+                    const hlColor = note.highlightRef?.color || '#FFE066';
+                    const isUnderline = hlColor === 'underline-wavy' || hlColor === 'underline-solid';
+                    return (
                     <div key={note.id} className={`rounded-2xl p-3 ${cardBg}`}
                       style={{ border: `1px solid ${isDarkMode ? '#4b5563' : '#e5e7eb'}` }}>
-                      {/* Highlighted text */}
-                      <div className="text-xs px-2 py-1 rounded mb-2"
-                        style={{ backgroundColor: '#fef08a33', borderLeft: '3px solid #fef08a' }}>
+                      {/* Highlighted text - clickable to jump */}
+                      <button
+                        className="w-full text-left text-xs px-2 py-1 rounded mb-2 transition-opacity active:opacity-60"
+                        style={isUnderline ? {
+                          borderLeft: `3px solid ${isDarkMode ? 'rgba(200,200,200,0.4)' : 'rgba(60,60,60,0.3)'}`,
+                          backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                        } : {
+                          backgroundColor: `${hlColor}33`,
+                          borderLeft: `3px solid ${hlColor}`,
+                        }}
+                        onClick={() => note.highlightRef && handleJumpToChapterHighlight(note.highlightRef.chapterKey, note.highlightRef.start)}
+                      >
                         <p className={`text-xs line-clamp-2 ${subText}`}>"{note.highlightRef!.text}"</p>
-                      </div>
+                      </button>
                       {/* Note content */}
                       {editingHighlightNoteId === note.id ? (
                         <div className="flex flex-col gap-2">
@@ -571,18 +612,31 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                         </>
                       )}
                     </div>
-                  ))}
+                  );
+                  })}
 
                   {/* Raw highlights (no note) */}
-                  {rawHighlights.map((h) => (
+                  {rawHighlights.map((h) => {
+                    const isUnderline = h.color === 'underline-wavy' || h.color === 'underline-solid';
+                    return (
                     <div key={`${h.chapterKey}-${h.start}`} className={`rounded-2xl p-3 ${cardBg}`}
                       style={{ border: `1px solid ${isDarkMode ? '#4b5563' : '#e5e7eb'}` }}>
-                      <div className="px-2 py-1 rounded"
-                        style={{ backgroundColor: h.color ? `${h.color}33` : '#fef08a33', borderLeft: `3px solid ${h.color || '#fef08a'}` }}>
+                      <button
+                        className="w-full text-left px-2 py-1 rounded transition-opacity active:opacity-60"
+                        style={isUnderline ? {
+                          borderLeft: `3px solid ${isDarkMode ? 'rgba(200,200,200,0.4)' : 'rgba(60,60,60,0.3)'}`,
+                          backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                        } : {
+                          backgroundColor: h.color ? `${h.color}33` : '#fef08a33',
+                          borderLeft: `3px solid ${h.color || '#fef08a'}`,
+                        }}
+                        onClick={() => handleJumpToChapterHighlight(h.chapterKey, h.start)}
+                      >
                         <p className={`text-xs line-clamp-3 ${subText}`}>"{h.text}"</p>
-                      </div>
+                      </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </>
               );
             })()}

@@ -47,7 +47,7 @@ import {
   dropLeadingDuplicateTitleParagraph,
   normalizeReaderLayoutText,
 } from '../utils/readerTextNormalize';
-import { PRESET_HIGHLIGHT_COLORS, resolveHighlightItems, buildPositionFromHighlight } from '../utils/highlightUtils';
+import { PRESET_HIGHLIGHT_COLORS, UNDERLINE_STYLE_WAVY, UNDERLINE_STYLE_SOLID, isUnderlineStyle, resolveHighlightItems, buildPositionFromHighlight } from '../utils/highlightUtils';
 import type { ResolvedHighlightItem } from '../utils/highlightUtils';
 
 interface ReaderProps {
@@ -154,6 +154,14 @@ const READER_APPEARANCE_STORAGE_KEY = 'app_reader_appearance';
 const READER_IMAGE_DIMENSION_CACHE_STORAGE_KEY = 'app_reader_image_dimension_cache_v1';
 const DEFAULT_HIGHLIGHT_COLOR = '#FFE066';
 // PRESET_HIGHLIGHT_COLORS is imported from ../utils/highlightUtils
+const HIGHLIGHT_STYLE_OPTIONS: { value: string; label: string }[] = [
+  { value: '#FFE066', label: '黄色' },
+  { value: '#BAE6FD', label: '蓝色' },
+  { value: '#A7F3D0', label: '绿色' },
+  { value: '#FCA5A5', label: '红色' },
+  { value: UNDERLINE_STYLE_WAVY, label: '波浪线' },
+  { value: UNDERLINE_STYLE_SOLID, label: '直线' },
+];
 const PRESET_TEXT_COLORS = ['#1E293B', '#334155', '#475569', '#0F172A', '#9F1239', '#164E63'];
 const PRESET_BACKGROUND_COLORS = ['#F0F2F5', '#FFF7E8', '#F2FCEB', '#EAF5FF', '#1A202C', '#0F172A'];
 const SYSTEM_READER_FONT_ID = 'reader-font-system-default';
@@ -738,6 +746,7 @@ const Reader: React.FC<ReaderProps> = ({
   const [activeFloatingPanel, setActiveFloatingPanel] = useState<FloatingPanel>('none');
   const [closingFloatingPanel, setClosingFloatingPanel] = useState<FloatingPanel | null>(null);
   const [highlightColor, setHighlightColor] = useState(DEFAULT_HIGHLIGHT_COLOR);
+  const [highlightStyleOpen, setHighlightStyleOpen] = useState(false);
   const [selectionPopup, setSelectionPopup] = useState<{
     x: number;
     y: number;
@@ -3127,6 +3136,7 @@ const Reader: React.FC<ReaderProps> = ({
         start,
         end,
         text: highlightText,
+        color: highlightColor,
       },
     };
     try {
@@ -3159,7 +3169,7 @@ const Reader: React.FC<ReaderProps> = ({
   const handleArticleClick = (e: React.MouseEvent<HTMLElement>) => {
     const target = e.target as HTMLElement;
     const segSpan = target.closest('[data-reader-segment="1"]') as HTMLElement | null;
-    if (segSpan && segSpan.style.backgroundColor) {
+    if (segSpan && segSpan.dataset.highlightColor) {
       const charIdx = parseInt(segSpan.dataset.start || '0', 10);
       // Find the full highlight range containing this index
       const range = currentHighlightRanges.find(r => r.start <= charIdx && charIdx < r.end);
@@ -3798,20 +3808,27 @@ const Reader: React.FC<ReaderProps> = ({
                       >
                         {'全部'}
                       </button>
-                      {PRESET_HIGHLIGHT_COLORS.map(color => {
+                      {Array.from(new Set<string>(resolvedHighlights.map(h => h.range.color))).map(color => {
                         const count = resolvedHighlights.filter(h => h.range.color === color).length;
                         if (count === 0) return null;
+                        const isUnderline = isUnderlineStyle(color);
                         return (
                           <button
                             key={color}
                             type="button"
                             onClick={() => setHighlightColorFilter(highlightColorFilter === color ? null : color)}
-                            className={`w-4 h-4 rounded-full border-2 transition-all ${
+                            className={`flex items-center justify-center border-2 transition-all ${
                               highlightColorFilter === color ? 'border-rose-400 scale-110' : 'border-transparent'
-                            }`}
-                            style={{ backgroundColor: color }}
+                            } ${isUnderline ? 'w-6 h-4 rounded text-[9px] font-bold' : 'w-4 h-4 rounded-full'}`}
+                            style={isUnderline ? {
+                              textDecoration: `underline ${color === UNDERLINE_STYLE_WAVY ? 'wavy' : 'solid'} rgba(80,80,80,0.7)`,
+                              textDecorationThickness: '1.5px',
+                              color: isDarkMode ? '#aaa' : '#555',
+                            } : { backgroundColor: color }}
                             title={`${count} 条`}
-                          />
+                          >
+                            {isUnderline ? 'A' : null}
+                          </button>
                         );
                       })}
                     </div>
@@ -4161,15 +4178,57 @@ const Reader: React.FC<ReaderProps> = ({
           onPointerDown={(e) => e.stopPropagation()}
         >
           {selectionPopup.type === 'add' && (
-            <div className="flex items-center justify-center gap-4 px-6 py-3">
+            <div className="flex items-center justify-center gap-3 px-6 py-3">
+              {/* Style picker */}
+              <div className="relative">
+                <button
+                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setHighlightStyleOpen(prev => !prev); }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center bg-white/10 active:bg-white/20 transition-colors"
+                  title="选择标注样式"
+                >
+                  {isUnderlineStyle(highlightColor) ? (
+                    <span style={{
+                      fontSize: 13, fontWeight: 700, color: '#fff',
+                      textDecoration: `underline ${highlightColor === UNDERLINE_STYLE_WAVY ? 'wavy' : 'solid'} rgba(255,255,255,0.8)`,
+                      textDecorationThickness: '1.5px',
+                    }}>A</span>
+                  ) : (
+                    <span className="w-4 h-4 rounded-full block" style={{ backgroundColor: highlightColor }} />
+                  )}
+                </button>
+                {highlightStyleOpen && (
+                  <div
+                    className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 rounded-2xl px-3 py-2 flex gap-2.5 shadow-xl"
+                    style={{ backgroundColor: '#2a2a2a', border: '1px solid rgba(255,255,255,0.1)' }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    {HIGHLIGHT_STYLE_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setHighlightColor(opt.value); setHighlightStyleOpen(false); }}
+                        className={`flex items-center justify-center rounded-full transition-transform active:scale-90 ${
+                          highlightColor === opt.value ? 'ring-2 ring-white/70 scale-110' : ''
+                        } ${isUnderlineStyle(opt.value) ? 'w-7 h-7 bg-white/10 text-white text-[11px] font-bold' : 'w-6 h-6'}`}
+                        style={isUnderlineStyle(opt.value) ? {
+                          textDecoration: `underline ${opt.value === UNDERLINE_STYLE_WAVY ? 'wavy' : 'solid'} rgba(255,255,255,0.7)`,
+                          textDecorationThickness: '1.5px',
+                        } : { backgroundColor: opt.value }}
+                        title={opt.label}
+                      >
+                        {isUnderlineStyle(opt.value) ? 'A' : null}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
-                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleApplySelectionHighlight(); }}
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setHighlightStyleOpen(false); handleApplySelectionHighlight(); }}
                 className="flex items-center gap-2 px-6 py-2 rounded-full bg-white/15 active:bg-white/25 text-sm font-bold transition-colors"
               >
                 划线
               </button>
               <button
-                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); window.getSelection()?.removeAllRanges(); setSelectionPopup(null); }}
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setHighlightStyleOpen(false); window.getSelection()?.removeAllRanges(); setSelectionPopup(null); }}
                 className="flex items-center gap-2 px-6 py-2 rounded-full text-sm text-white/50 active:text-white/80 transition-colors"
               >
                 取消
@@ -4306,9 +4365,19 @@ const Reader: React.FC<ReaderProps> = ({
                         key={`${segment.start}-${segment.end}-${segment.color || 'plain'}`}
                         data-reader-segment="1"
                         data-start={segment.start}
-                        className={segment.color ? 'rounded-[0.14em]' : undefined}
+                        data-highlight-color={segment.color || undefined}
+                        className={segment.color && !isUnderlineStyle(segment.color) ? 'rounded-[0.14em]' : undefined}
                         style={{
-                          ...(segment.color ? { backgroundColor: resolveHighlightBackgroundColor(segment.color, isDarkMode) } : {}),
+                          ...(segment.color && !isUnderlineStyle(segment.color) ? { backgroundColor: resolveHighlightBackgroundColor(segment.color, isDarkMode) } : {}),
+                          ...(segment.color && isUnderlineStyle(segment.color) ? {
+                            textDecorationLine: 'underline',
+                            textDecorationStyle: segment.color === UNDERLINE_STYLE_WAVY ? 'wavy' : 'solid',
+                            textDecorationColor: isDarkMode ? 'rgba(200,200,200,0.65)' : 'rgba(40,40,40,0.55)',
+                            textDecorationThickness: '1.5px',
+                            textUnderlineOffset: '0.22em',
+                            textDecorationSkipInk: 'none',
+                            WebkitTextDecorationSkip: 'none',
+                          } : {}),
                           ...(segment.hasAiUnderline
                             ? {
                                 textDecorationLine: 'underline',
