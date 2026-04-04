@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, FileText, HelpCircle, Trophy, Plus, Trash2, Loader2, ChevronLeft, Check, X } from 'lucide-react';
+import { MessageSquare, FileText, HelpCircle, Trophy, Plus, Trash2, Loader2, ChevronLeft, Check, X, ExternalLink } from 'lucide-react';
 import twemoji from '@twemoji/api';
 const twemojiParse = twemoji.parse.bind(twemoji);
 import {
-  Book, FavoriteQuote, Achievement, QuizSession, Notebook, StudyNote, QuizQuestion, ApiConfig, ReaderHighlightRange,
+  Book, FavoriteQuote, Achievement, QuizSession, Notebook, StudyNote, QuizQuestion, ApiConfig, ReaderHighlightRange, ReaderBookState,
 } from '../types';
-import { getBookContent } from '../utils/bookContentStorage';
+import { getBookContent, saveBookReaderState } from '../utils/bookContentStorage';
 import { Character, Persona } from './settings/types';
 import { buildConversationKey, readConversationBucket, ChatBubble, CHAT_STORE_UPDATED_EVENT } from '../utils/readerChatRuntime';
 import {
@@ -34,6 +34,18 @@ const TwemojiIcon: React.FC<{ emoji: string; size?: number; className?: string }
   );
 };
 
+// ─── TwemojiText ──────────────────────────────────────────────────────────────
+// Renders text with emoji replaced by Twemoji SVGs inline.
+const TwemojiText: React.FC<{ text: string; className?: string; style?: React.CSSProperties }> = ({ text, className = '', style }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.textContent = text;
+    twemojiParse(ref.current, { folder: 'svg', ext: '.svg' });
+  }, [text]);
+  return <span ref={ref} className={`twemoji-text ${className}`.trim()} style={style} />;
+};
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type TabKey = '对话' | '笔记' | '问答' | '印章';
@@ -50,6 +62,10 @@ interface RecentBookPanelProps {
   apiConfig: ApiConfig;
   onJumpToHighlight?: (bookId: string, chapterIndex: number | null, charOffset: number) => void;
 }
+
+type HighlightDetail =
+  | { type: 'raw'; chapterKey: string; start: number; end: number; text: string; color: string; ctxBefore: string; ctxAfter: string }
+  | { type: 'note'; note: StudyNote; nb: Notebook; ctxBefore: string; ctxAfter: string };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -126,6 +142,69 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
     return <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />;
   };
 
+  const getHighlightContext = (chapterKey: string, start: number, end: number, ctxLen = 80) => {
+    const chapterText = bookContextTextsRef.current[chapterKey] || '';
+    const ctxBefore = chapterText.slice(Math.max(0, start - ctxLen), start);
+    const ctxAfter = chapterText.slice(end, Math.min(chapterText.length, end + ctxLen));
+    return { ctxBefore, ctxAfter };
+  };
+
+  const handleDeleteRawHighlight = async (chapterKey: string, start: number, end: number) => {
+    const content = await getBookContent(recentBook.id);
+    const existingState = content?.readerState || {};
+    const existingByChapter = existingState.highlightsByChapter || {};
+    const filtered = (existingByChapter[chapterKey] || []).filter(
+      (r: ReaderHighlightRange) => !(r.start === start && r.end === end)
+    );
+    const newByChapter = { ...existingByChapter, [chapterKey]: filtered };
+    const newState: ReaderBookState = { ...existingState, highlightsByChapter: newByChapter };
+    await saveBookReaderState(recentBook.id, newState);
+    setHighlightDetail(null);
+    await loadNotes();
+  };
+
+  const handleAiCommentRawHighlight = async (chapterKey: string, start: number, end: number, text: string, color: string) => {
+    if (commentingNoteId) return;
+    const tempId = `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setCommentingNoteId(tempId);
+    try {
+      const activeChar = characters.find(c => c.id === activeCharacterId);
+      const activePersona = personas.find(p => p.id === activePersonaId);
+      const prompt = `你是${activeChar?.name || '角色'}，正在陪${activePersona?.name || '读者'}读书。\n请用角色身份，对以下书中的划线段落写一句简短的旁批（50字以内，口语化，有个性）：\n"${text}"`;
+      const reply = await callAiModel(prompt, apiConfig);
+      const thread: import('../types').StudyNoteCommentThread = {
+        id: `thread-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        characterId: activeCharacterId || '',
+        characterName: activeChar?.name || '',
+        characterAvatar: activeChar?.avatar || '',
+        messages: [{ id: `msg-${Date.now()}`, role: 'ai' as const, content: reply.trim(), createdAt: Date.now() }],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      const newNote: StudyNote = {
+        id: tempId,
+        content: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        commentThreads: [thread],
+        highlightRef: { chapterKey, start, end, text, color },
+      };
+      let targetNb = notebooks[0];
+      if (!targetNb) {
+        targetNb = { id: `nb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title: recentBook.title, personaId: activePersonaId || '', boundBookIds: [recentBook.id], notes: [], createdAt: Date.now(), updatedAt: Date.now() };
+      }
+      await saveNotebook({ ...targetNb, notes: [...targetNb.notes, newNote], updatedAt: Date.now() });
+      await loadNotes();
+      // Refresh detail to show the note
+      const { ctxBefore, ctxAfter } = getHighlightContext(chapterKey, start, end);
+      setHighlightDetail({ type: 'raw', chapterKey, start, end, text, color, ctxBefore, ctxAfter });
+    } catch (e) {
+      console.error('AI评划线失败', e);
+    } finally {
+      setCommentingNoteId(null);
+    }
+  };
+
   // ─── 对话 ─────────────────────────────────────────────────────────────────
 
   const [chatMessages, setChatMessages] = useState<ChatBubble[]>([]);
@@ -155,11 +234,13 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
   const [noteText, setNoteText] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [bookHighlights, setBookHighlights] = useState<Array<{ chapterKey: string; start: number; end: number; text: string; color: string }>>([]);
+  const bookContextTextsRef = useRef<Record<string, string>>({});
   const [editingHighlightNoteId, setEditingHighlightNoteId] = useState<string | null>(null);
   const [editingHighlightNoteText, setEditingHighlightNoteText] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
   const [commentingNoteId, setCommentingNoteId] = useState<string | null>(null);
+  const [highlightDetail, setHighlightDetail] = useState<HighlightDetail | null>(null);
 
   const loadNotes = useCallback(async () => {
     const [nbs, qs, bookContent] = await Promise.all([
@@ -191,6 +272,11 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
       }
     }
     setBookHighlights(highlights);
+
+    // Store chapter texts for context lookup
+    const ctxMap: Record<string, string> = { full: fullText };
+    chapters.forEach((ch, idx) => { ctxMap[`chapter-${idx}`] = ch.content || ''; });
+    bookContextTextsRef.current = ctxMap;
   }, [recentBook.id]);
 
   // ─── 旁批更新事件 ──────────────────────────────────────────────────────────
@@ -464,7 +550,7 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                       }`}
                       style={{ border: isUser ? 'none' : '1px solid #e5e7eb' }}
                     >
-                      {content}
+                      <TwemojiText text={content} />
                     </div>
                   </div>
                 );
@@ -532,109 +618,76 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                   {highlightNotesList.map(({ note, nb }) => {
                     const hlColor = note.highlightRef?.color || '#FFE066';
                     const isUnderline = hlColor === 'underline-wavy' || hlColor === 'underline-solid';
+                    const hasComment = note.commentThreads.length > 0;
+                    const lastComment = hasComment ? note.commentThreads[note.commentThreads.length - 1] : null;
                     return (
-                    <div key={note.id} className={`rounded-2xl p-3 ${cardBg}`}
-                      style={{ border: `1px solid ${isDarkMode ? '#4b5563' : '#e5e7eb'}` }}>
-                      {/* Highlighted text - clickable to jump */}
                       <button
-                        className="w-full text-left text-xs px-2 py-1 rounded mb-2 transition-opacity active:opacity-60"
-                        style={isUnderline ? {
-                          borderLeft: `3px solid ${isDarkMode ? 'rgba(200,200,200,0.4)' : 'rgba(60,60,60,0.3)'}`,
-                          backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                        } : {
-                          backgroundColor: `${hlColor}33`,
-                          borderLeft: `3px solid ${hlColor}`,
+                        key={note.id}
+                        className={`w-full text-left rounded-2xl p-3 ${cardBg} transition-opacity active:opacity-70`}
+                        style={{ border: `1px solid ${isDarkMode ? '#4b5563' : '#e5e7eb'}` }}
+                        onClick={() => {
+                          const { ctxBefore, ctxAfter } = getHighlightContext(note.highlightRef!.chapterKey, note.highlightRef!.start, note.highlightRef!.end);
+                          setHighlightDetail({ type: 'note', note, nb, ctxBefore, ctxAfter });
                         }}
-                        onClick={() => note.highlightRef && handleJumpToChapterHighlight(note.highlightRef.chapterKey, note.highlightRef.start)}
                       >
-                        <p className={`text-xs line-clamp-2 ${subText}`}>"{note.highlightRef!.text}"</p>
-                      </button>
-                      {/* Note content */}
-                      {editingHighlightNoteId === note.id ? (
-                        <div className="flex flex-col gap-2">
-                          <textarea
-                            autoFocus
-                            value={editingHighlightNoteText}
-                            onChange={(e) => setEditingHighlightNoteText(e.target.value)}
-                            rows={3}
-                            className={`w-full text-sm outline-none resize-none bg-transparent ${text}`}
-                          />
-                          <div className="flex justify-end gap-2">
-                            <button onClick={() => setEditingHighlightNoteId(null)}
-                              className={`px-3 py-1 rounded-full text-xs ${subText}`}>取消</button>
-                            <button onClick={async () => {
-                              const updated = { ...nb, notes: nb.notes.map(n2 => n2.id === note.id ? { ...n2, content: editingHighlightNoteText, updatedAt: Date.now() } : n2), updatedAt: Date.now() };
-                              await saveNotebook(updated);
-                              setEditingHighlightNoteId(null);
-                              await loadNotes();
-                            }} className="px-3 py-1 rounded-full text-xs font-bold bg-[#1A1A1A] text-white">保存</button>
+                        <div className="flex items-start gap-2">
+                          <div className="flex-shrink-0 mt-0.5">
+                            {isUnderline
+                              ? <span className={`text-xs font-bold ${subText}`} style={{ textDecoration: `underline ${hlColor === 'underline-wavy' ? 'wavy' : 'solid'} currentColor`, textDecorationThickness: '1.5px' }}>A</span>
+                              : <span className="inline-block w-2 h-2 rounded-full mt-1.5" style={{ backgroundColor: hlColor }} />
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs line-clamp-2 ${subText}`}>"{note.highlightRef!.text}"</p>
+                            {note.content && <p className={`text-xs mt-1 line-clamp-1 ${text} opacity-70`}>{note.content}</p>}
+                            {lastComment && (
+                              <p className={`text-[10px] mt-1 italic line-clamp-1 ${subText}`}>
+                                <span className="font-bold not-italic">{lastComment.characterName}：</span>
+                                {lastComment.messages[lastComment.messages.length - 1]?.content}
+                              </p>
+                            )}
                           </div>
                         </div>
-                      ) : (
-                        <>
-                          <p className={`text-sm ${text}`}>{note.content}</p>
-                          {note.commentThreads.length > 0 && (
-                            <div className={`mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-600' : 'border-slate-100'} text-xs ${subText} italic`}>
-                              {note.commentThreads[note.commentThreads.length - 1].messages.slice(-1).map(msg => (
-                                <span key={msg.id}>
-                                  {note.commentThreads[note.commentThreads.length - 1].characterName && (
-                                    <span className="font-bold not-italic mr-1">{note.commentThreads[note.commentThreads.length - 1].characterName}：</span>
-                                  )}
-                                  {msg.content}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between mt-2">
-                            <span className={`text-[10px] ${subText}`}>{formatDate(note.updatedAt)}</span>
-                            <div className="flex items-center gap-2">
-                              {note.commentThreads.length === 0 && (
-                                <button
-                                  onClick={() => handleAiCommentNote(note, nb)}
-                                  disabled={!!commentingNoteId}
-                                  className={`text-xs ${subText} hover:text-slate-500 transition-colors flex items-center gap-1 disabled:opacity-40`}
-                                >
-                                  {commentingNoteId === note.id ? <Loader2 size={10} className="animate-spin" /> : null}
-                                  AI评
-                                </button>
-                              )}
-                              <button onClick={() => { setEditingHighlightNoteId(note.id); setEditingHighlightNoteText(note.content); }}
-                                className={`text-xs ${subText} hover:text-slate-600`}>编辑</button>
-                              <button onClick={async () => {
-                                const updated = { ...nb, notes: nb.notes.filter(n2 => n2.id !== note.id), updatedAt: Date.now() };
-                                await saveNotebook(updated);
-                                await loadNotes();
-                              }} className="text-slate-300 hover:text-rose-400 transition-colors">
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  );
+                      </button>
+                    );
                   })}
 
                   {/* Raw highlights (no note) */}
                   {rawHighlights.map((h) => {
                     const isUnderline = h.color === 'underline-wavy' || h.color === 'underline-solid';
+                    // Check if this raw highlight has an AI comment note (created by handleAiCommentRawHighlight)
+                    const matchedNote = notebooks.flatMap(nb => nb.notes).find(n =>
+                      n.highlightRef?.chapterKey === h.chapterKey && n.highlightRef?.start === h.start && n.highlightRef?.end === h.end && !n.content
+                    );
+                    const lastComment = matchedNote && matchedNote.commentThreads.length > 0 ? matchedNote.commentThreads[matchedNote.commentThreads.length - 1] : null;
                     return (
-                    <div key={`${h.chapterKey}-${h.start}`} className={`rounded-2xl p-3 ${cardBg}`}
-                      style={{ border: `1px solid ${isDarkMode ? '#4b5563' : '#e5e7eb'}` }}>
                       <button
-                        className="w-full text-left px-2 py-1 rounded transition-opacity active:opacity-60"
-                        style={isUnderline ? {
-                          borderLeft: `3px solid ${isDarkMode ? 'rgba(200,200,200,0.4)' : 'rgba(60,60,60,0.3)'}`,
-                          backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                        } : {
-                          backgroundColor: h.color ? `${h.color}33` : '#fef08a33',
-                          borderLeft: `3px solid ${h.color || '#fef08a'}`,
+                        key={`${h.chapterKey}-${h.start}`}
+                        className={`w-full text-left rounded-2xl p-3 ${cardBg} transition-opacity active:opacity-70`}
+                        style={{ border: `1px solid ${isDarkMode ? '#4b5563' : '#e5e7eb'}` }}
+                        onClick={() => {
+                          const { ctxBefore, ctxAfter } = getHighlightContext(h.chapterKey, h.start, h.end);
+                          setHighlightDetail({ type: 'raw', chapterKey: h.chapterKey, start: h.start, end: h.end, text: h.text, color: h.color, ctxBefore, ctxAfter });
                         }}
-                        onClick={() => handleJumpToChapterHighlight(h.chapterKey, h.start)}
                       >
-                        <p className={`text-xs line-clamp-3 ${subText}`}>"{h.text}"</p>
+                        <div className="flex items-start gap-2">
+                          <div className="flex-shrink-0 mt-0.5">
+                            {isUnderline
+                              ? <span className={`text-xs font-bold ${subText}`} style={{ textDecoration: `underline ${h.color === 'underline-wavy' ? 'wavy' : 'solid'} currentColor`, textDecorationThickness: '1.5px' }}>A</span>
+                              : <span className="inline-block w-2 h-2 rounded-full mt-1.5" style={{ backgroundColor: h.color || '#FFE066' }} />
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs line-clamp-2 ${subText}`}>"{h.text}"</p>
+                            {lastComment && (
+                              <p className={`text-[10px] mt-1 italic line-clamp-1 ${subText}`}>
+                                <span className="font-bold not-italic">{lastComment.characterName}：</span>
+                                {lastComment.messages[lastComment.messages.length - 1]?.content}
+                              </p>
+                            )}
+                          </div>
+                        </div>
                       </button>
-                    </div>
                     );
                   })}
                 </>
@@ -689,9 +742,11 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                       </div>
                     ) : (
                       <>
-                        <p className={`text-sm ${text}`} style={{ fontFamily: '"Noto Serif SC", serif' }}>
-                          {stripMarkdown(note.content) || '空白笔记'}
-                        </p>
+                        <TwemojiText
+                          text={stripMarkdown(note.content) || '空白笔记'}
+                          className={`text-sm ${text} block`}
+                          style={{ fontFamily: '"Noto Serif SC", serif' }}
+                        />
                         {note.commentThreads.length > 0 && (
                           <div className={`mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-600' : 'border-slate-100'} text-xs ${subText} italic`}>
                             {note.commentThreads[note.commentThreads.length - 1].messages.slice(-1).map(msg => (
@@ -1051,6 +1106,186 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
           </div>
         )}
       </div>
+
+      {/* ─── Highlight Detail Modal ─────────────────────────────────────── */}
+      {highlightDetail && (() => {
+        const hlColor = highlightDetail.type === 'note'
+          ? (highlightDetail.note.highlightRef?.color || '#FFE066')
+          : highlightDetail.color;
+        const isUnderline = hlColor === 'underline-wavy' || hlColor === 'underline-solid';
+        const hlText = highlightDetail.type === 'note' ? highlightDetail.note.highlightRef!.text : highlightDetail.text;
+        const noteObj = highlightDetail.type === 'note' ? highlightDetail.note : null;
+        const nbObj = highlightDetail.type === 'note' ? highlightDetail.nb : null;
+        const chapterKey = highlightDetail.type === 'note' ? highlightDetail.note.highlightRef!.chapterKey : highlightDetail.chapterKey;
+        const charStart = highlightDetail.type === 'note' ? highlightDetail.note.highlightRef!.start : highlightDetail.start;
+        const charEnd = highlightDetail.type === 'note' ? highlightDetail.note.highlightRef!.end : highlightDetail.end;
+
+        const allThreads = noteObj?.commentThreads || [];
+        const lastThread = allThreads.length > 0 ? allThreads[allThreads.length - 1] : null;
+        const lastMsg = lastThread?.messages[lastThread.messages.length - 1];
+
+        return (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 z-40 bg-black/50"
+              onClick={() => { setHighlightDetail(null); setEditingHighlightNoteId(null); }}
+            />
+            {/* Sheet */}
+            <div
+              className={`fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl overflow-hidden flex flex-col max-h-[80vh] ${isDarkMode ? 'bg-[#1e2533]' : 'bg-white'}`}
+              style={{ boxShadow: '0 -8px 40px rgba(0,0,0,0.18)' }}
+            >
+              {/* Handle */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className={`w-8 h-1 rounded-full ${isDarkMode ? 'bg-slate-600' : 'bg-slate-200'}`} />
+              </div>
+
+              <div className="overflow-y-auto px-5 py-3 flex flex-col gap-4 pb-6">
+                {/* Context + highlighted text */}
+                <div
+                  className="rounded-xl px-3 py-3 text-sm leading-relaxed"
+                  style={isUnderline ? {
+                    borderLeft: `3px solid ${isDarkMode ? 'rgba(200,200,200,0.4)' : 'rgba(60,60,60,0.3)'}`,
+                    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                  } : {
+                    backgroundColor: `${hlColor}22`,
+                    borderLeft: `3px solid ${hlColor}`,
+                  }}
+                >
+                  {highlightDetail.ctxBefore && (
+                    <TwemojiText text={`…${highlightDetail.ctxBefore}`} className={`${subText} opacity-60 text-xs`} />
+                  )}
+                  <TwemojiText
+                    text={hlText}
+                    className={`${text} font-medium`}
+                    style={isUnderline ? {
+                      textDecoration: `underline ${hlColor === 'underline-wavy' ? 'wavy' : 'solid'} ${isDarkMode ? 'rgba(200,200,200,0.5)' : 'rgba(40,40,40,0.4)'}`,
+                      textDecorationThickness: '1.5px',
+                    } : {}}
+                  />
+                  {highlightDetail.ctxAfter && (
+                    <TwemojiText text={`${highlightDetail.ctxAfter}…`} className={`${subText} opacity-60 text-xs`} />
+                  )}
+                </div>
+
+                {/* Note / idea section */}
+                {noteObj && nbObj && (
+                  <div className={`rounded-xl p-3 ${isDarkMode ? 'bg-[#2d3748]' : 'bg-slate-50'}`}>
+                    <div className={`text-[10px] font-bold uppercase tracking-wider ${subText} mb-2`}>想法</div>
+                    {editingHighlightNoteId === noteObj.id ? (
+                      <div className="flex flex-col gap-2">
+                        <textarea
+                          autoFocus
+                          value={editingHighlightNoteText}
+                          onChange={(e) => setEditingHighlightNoteText(e.target.value)}
+                          rows={3}
+                          className={`w-full text-sm outline-none resize-none bg-transparent ${text}`}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setEditingHighlightNoteId(null)}
+                            className={`px-3 py-1 rounded-full text-xs ${subText}`}>取消</button>
+                          <button onClick={async () => {
+                            const updated = { ...nbObj, notes: nbObj.notes.map(n2 => n2.id === noteObj.id ? { ...n2, content: editingHighlightNoteText, updatedAt: Date.now() } : n2), updatedAt: Date.now() };
+                            await saveNotebook(updated);
+                            setEditingHighlightNoteId(null);
+                            await loadNotes();
+                            // refresh detail
+                            const nbs = await import('../utils/studyHubStorage').then(m => m.getAllNotebooks());
+                            const freshNb = nbs.find(n => n.id === nbObj.id);
+                            const freshNote = freshNb?.notes.find(n => n.id === noteObj.id);
+                            if (freshNote && freshNb) setHighlightDetail(prev => prev ? { ...prev, note: freshNote, nb: freshNb } as HighlightDetail : null);
+                          }} className="px-3 py-1 rounded-full text-xs font-bold bg-[#1A1A1A] text-white">保存</button>
+                        </div>
+                      </div>
+                    ) : noteObj.content ? (
+                      <div className="flex items-start gap-2">
+                        <TwemojiText text={noteObj.content} className={`text-sm ${text} flex-1`} />
+                        <button onClick={() => { setEditingHighlightNoteId(noteObj.id); setEditingHighlightNoteText(noteObj.content); }}
+                          className={`text-[10px] ${subText} flex-shrink-0 mt-0.5`}>编辑</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setEditingHighlightNoteId(noteObj.id); setEditingHighlightNoteText(''); }}
+                        className={`text-xs ${subText} italic`}>点击添加想法...</button>
+                    )}
+                  </div>
+                )}
+
+                {/* AI comment section */}
+                {(noteObj || highlightDetail.type === 'raw') && (
+                  <div className={`rounded-xl p-3 ${isDarkMode ? 'bg-[#2d3748]' : 'bg-slate-50'}`}>
+                    <div className={`text-[10px] font-bold uppercase tracking-wider ${subText} mb-2`}>AI评</div>
+                    {lastMsg ? (
+                      <div className={`text-sm italic ${subText}`}>
+                        {lastThread?.characterName && <span className="font-bold not-italic mr-1">{lastThread.characterName}：</span>}
+                        <TwemojiText text={lastMsg.content} />
+                      </div>
+                    ) : (
+                      <button
+                        onClick={async () => {
+                          if (highlightDetail.type === 'note' && noteObj && nbObj) {
+                            await handleAiCommentNote(noteObj, nbObj);
+                            await loadNotes();
+                            const nbs = await import('../utils/studyHubStorage').then(m => m.getAllNotebooks());
+                            const freshNb = nbs.find(n => n.id === nbObj.id);
+                            const freshNote = freshNb?.notes.find(n => n.id === noteObj.id);
+                            if (freshNote && freshNb) setHighlightDetail(prev => prev ? { ...prev, note: freshNote, nb: freshNb } as HighlightDetail : null);
+                          } else if (highlightDetail.type === 'raw') {
+                            await handleAiCommentRawHighlight(highlightDetail.chapterKey, highlightDetail.start, highlightDetail.end, highlightDetail.text, highlightDetail.color);
+                          }
+                        }}
+                        disabled={!!commentingNoteId}
+                        className={`text-xs ${subText} flex items-center gap-1 disabled:opacity-40`}
+                      >
+                        {commentingNoteId ? <Loader2 size={10} className="animate-spin" /> : null}
+                        让角色评论这段
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Action bar */}
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-3">
+                    {/* Jump to reader */}
+                    <button
+                      onClick={() => { handleJumpToChapterHighlight(chapterKey, charStart); setHighlightDetail(null); }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${isDarkMode ? 'bg-slate-600 text-slate-200 active:bg-slate-500' : 'bg-slate-100 text-slate-600 active:bg-slate-200'}`}
+                    >
+                      <ExternalLink size={11} />
+                      跳转正文
+                    </button>
+                    {/* Delete */}
+                    <button
+                      onClick={async () => {
+                        if (highlightDetail.type === 'note' && nbObj && noteObj) {
+                          const updated = { ...nbObj, notes: nbObj.notes.filter(n2 => n2.id !== noteObj.id), updatedAt: Date.now() };
+                          await saveNotebook(updated);
+                          // Also delete the raw highlight if content is empty
+                          if (!noteObj.content) await handleDeleteRawHighlight(chapterKey, charStart, charEnd);
+                          else await loadNotes();
+                        } else if (highlightDetail.type === 'raw') {
+                          await handleDeleteRawHighlight(chapterKey, charStart, charEnd);
+                        }
+                        setHighlightDetail(null);
+                      }}
+                      className="text-slate-300 hover:text-rose-400 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { setHighlightDetail(null); setEditingHighlightNoteId(null); }}
+                    className={`text-xs ${subText}`}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 };
