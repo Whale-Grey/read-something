@@ -11,12 +11,12 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { Achievement, ApiConfig, ApiPreset, AppSettings, Book, Chapter, FavoriteQuote, RagApiConfigResolver, ReaderSummaryCard, ReaderHighlightRange, ReaderPositionState } from '../types';
+import { Achievement, ApiConfig, ApiPreset, AppSettings, Book, Chapter, FavoriteQuote, RagApiConfigResolver, ReaderSummaryCard, ReaderHighlightRange, ReaderPositionState, StudyNoteCommentThread } from '../types';
 import { Character, Persona, WorldBookEntry } from './settings/types';
 import ResolvedImage from './ResolvedImage';
 import ReaderMoreSettingsPanel, { ReaderArchiveOption } from './ReaderMoreSettingsPanel';
 import { deleteImageByRef, saveImageFile } from '../utils/imageStorage';
-import { saveFavoriteQuote, getAllFavoriteQuotes, deleteFavoriteQuote, saveAchievement } from '../utils/studyHubStorage';
+import { saveFavoriteQuote, getAllFavoriteQuotes, deleteFavoriteQuote, saveAchievement, getAllNotebooks, saveNotebook } from '../utils/studyHubStorage';
 import { getBookContent, saveBookSummaryState } from '../utils/bookContentStorage';
 import {
   abortConversationGeneration,
@@ -162,6 +162,9 @@ const LEGACY_DEFAULT_NEUMORPHISM_BUBBLE_CSS_SIGNATURE = normalizeBubbleCssSignat
 const isLegacyDefaultNeumorphismBubbleCss = (css: string) =>
   normalizeBubbleCssSignature(css) === LEGACY_DEFAULT_NEUMORPHISM_BUBBLE_CSS_SIGNATURE;
 
+export const NOTE_COMMENT_UPDATED_EVENT = 'note_comment_updated';
+const NOTE_COMMENT_PATTERN = /【旁批[：:]\s*(note-[a-z0-9-]+)\s*[｜|]\s*([\s\S]+?)】/;
+
 /* ========== 成就卡片系统 ========== */
 const ACHIEVEMENT_PATTERN = /【成就[：:]\s*(.*?)\s*[｜|]\s*图标[：:]\s*(.*?)\s*[｜|]\s*条件[：:]\s*(.*?)\s*(?:[｜|]\s*奖励[：:]\s*(.*?)\s*)?[｜|]\s*评价[：:]\s*(.*?)\s*】/;
 
@@ -259,12 +262,13 @@ const AchievementCardInline: React.FC<{
 );
 
 const renderBubbleContent = (content: string): React.ReactNode => {
-  const match = content.match(ACHIEVEMENT_PATTERN);
-  if (!match) return content;
+  const stripped = content.replace(/【旁批[：:][^】]*】/g, '').trim();
+  const match = stripped.match(ACHIEVEMENT_PATTERN);
+  if (!match) return stripped;
 
   const [fullMatch, achievementName, icon, condition, , comment] = match;
-  const beforeText = content.slice(0, match.index);
-  const afterText = content.slice((match.index || 0) + fullMatch.length);
+  const beforeText = stripped.slice(0, match.index);
+  const afterText = stripped.slice((match.index || 0) + fullMatch.length);
 
   return (
     <>
@@ -2900,6 +2904,25 @@ const ReaderMessagePanel = React.forwardRef<
         } catch { /* RAG 静默失败 */ }
       }
 
+      // Check for uncommented notes to inject as "旁批任务"
+      let noteExtraInstructions: string | undefined;
+      if (activeBook) {
+        try {
+          const allNbs = await getAllNotebooks();
+          const bookNbs = allNbs.filter(nb => nb.boundBookIds.includes(activeBook.id));
+          const uncommentedNotes = bookNbs
+            .flatMap(nb => nb.notes)
+            .filter(n => n.commentThreads.length === 0)
+            .slice(0, 3); // max 3
+          if (uncommentedNotes.length > 0) {
+            const noteList = uncommentedNotes.map(n => `[${n.id}] ${(n.highlightRef ? `（划线："${n.highlightRef.text.slice(0,30)}"）` : '')}${n.content.slice(0, 80)}`).join('\n');
+            noteExtraInstructions = `【旁批任务】${userNickname}有${uncommentedNotes.length}条笔记还没有你的评论。如果你有感触，可以在本次回复的某个[气泡]里顺手写一句简短旁批（可以不做，不强制）。旁批格式：【旁批：笔记ID｜评论内容】（放在气泡内容末尾）。\n待旁批笔记：\n${noteList}`;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
       const result = await runConversationGeneration({
         mode: 'manual',
         conversationKey: requestConversationKey,
@@ -2925,6 +2948,7 @@ const ReaderMessagePanel = React.forwardRef<
         allowEmptyPending: false,
         onAddAiUnderlineRange,
         ragContext,
+        extraInstructions: noteExtraInstructions,
       });
 
       if (result.status === 'skip') {
@@ -2963,6 +2987,44 @@ const ReaderMessagePanel = React.forwardRef<
           saveAchievement(achievement).catch(() => undefined);
           break;
         }
+      }
+
+      // 扫描旁批指令并保存到笔记
+      try {
+        for (const msg of aiMessages) {
+          const commentMatch = msg.content.match(NOTE_COMMENT_PATTERN);
+          if (commentMatch) {
+            const [, noteId, commentContent] = commentMatch;
+            const allNbs = await getAllNotebooks();
+            for (const nb of allNbs) {
+              const noteIdx = nb.notes.findIndex(n => n.id === noteId);
+              if (noteIdx === -1) continue;
+              const note = nb.notes[noteIdx];
+              const thread: StudyNoteCommentThread = {
+                id: `thread-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                characterId: activeCharacterId || '',
+                characterName: characterRealName || '',
+                characterAvatar: activeCharacter?.avatar || '',
+                messages: [{
+                  id: `msg-${Date.now()}`,
+                  role: 'ai' as const,
+                  content: commentContent.trim(),
+                  createdAt: Date.now(),
+                }],
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              };
+              const updatedNote = { ...note, commentThreads: [...note.commentThreads, thread] };
+              const updatedNb = { ...nb, notes: nb.notes.map((n, i) => i === noteIdx ? updatedNote : n), updatedAt: Date.now() };
+              await saveNotebook(updatedNb);
+              window.dispatchEvent(new Event(NOTE_COMMENT_UPDATED_EVENT));
+              break;
+            }
+            break; // only handle first match
+          }
+        }
+      } catch (e) {
+        // ignore comment save errors
       }
 
       pendingGenerationRef.current = {

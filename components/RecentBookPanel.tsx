@@ -118,6 +118,15 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
     return () => window.removeEventListener(CHAT_STORE_UPDATED_EVENT, handler);
   }, [loadChat]);
 
+  // ─── 旁批更新事件 ──────────────────────────────────────────────────────────
+  const NOTE_COMMENT_UPDATED_EVENT = 'note_comment_updated';
+  useEffect(() => {
+    if (activeTab !== '笔记') return;
+    const handler = () => loadNotes();
+    window.addEventListener(NOTE_COMMENT_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(NOTE_COMMENT_UPDATED_EVENT, handler);
+  }, [activeTab, loadNotes]);
+
   // ─── 笔记 ─────────────────────────────────────────────────────────────────
 
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
@@ -128,6 +137,9 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
   const [bookHighlights, setBookHighlights] = useState<Array<{ chapterKey: string; start: number; end: number; text: string; color: string }>>([]);
   const [editingHighlightNoteId, setEditingHighlightNoteId] = useState<string | null>(null);
   const [editingHighlightNoteText, setEditingHighlightNoteText] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState('');
+  const [commentingNoteId, setCommentingNoteId] = useState<string | null>(null);
 
   const loadNotes = useCallback(async () => {
     const [nbs, qs, bookContent] = await Promise.all([
@@ -202,6 +214,39 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
   const handleDeleteQuote = async (id: string) => {
     await deleteFavoriteQuote(id);
     setQuotes((prev) => prev.filter((q) => q.id !== id));
+  };
+
+  const handleAiCommentNote = async (note: StudyNote, nb: Notebook) => {
+    if (commentingNoteId) return;
+    setCommentingNoteId(note.id);
+    try {
+      const activeChar = characters.find(c => c.id === activeCharacterId);
+      const activePersona = personas.find(p => p.id === activePersonaId);
+      const prompt = `你是${activeChar?.name || '角色'}，正在陪${activePersona?.name || '读者'}读书。\n请用角色身份，对以下读书笔记写一句简短的评论（50字以内，口语化，有个性）：\n"${note.content}"`;
+      const reply = await callAiModel(prompt, apiConfig);
+      const thread: import('../types').StudyNoteCommentThread = {
+        id: `thread-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        characterId: activeCharacterId || '',
+        characterName: activeChar?.name || '',
+        characterAvatar: activeChar?.avatar || '',
+        messages: [{
+          id: `msg-${Date.now()}`,
+          role: 'ai' as const,
+          content: reply.trim(),
+          createdAt: Date.now(),
+        }],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      const updatedNote: StudyNote = { ...note, commentThreads: [...note.commentThreads, thread] };
+      const updatedNb: Notebook = { ...nb, notes: nb.notes.map(n => n.id === note.id ? updatedNote : n), updatedAt: Date.now() };
+      await saveNotebook(updatedNb);
+      await loadNotes();
+    } catch (e) {
+      console.error('AI评论失败', e);
+    } finally {
+      setCommentingNoteId(null);
+    }
   };
 
   // ─── 问答 ─────────────────────────────────────────────────────────────────
@@ -487,9 +532,31 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                       ) : (
                         <>
                           <p className={`text-sm ${text}`}>{note.content}</p>
+                          {note.commentThreads.length > 0 && (
+                            <div className={`mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-600' : 'border-slate-100'} text-xs ${subText} italic`}>
+                              {note.commentThreads[note.commentThreads.length - 1].messages.slice(-1).map(msg => (
+                                <span key={msg.id}>
+                                  {note.commentThreads[note.commentThreads.length - 1].characterName && (
+                                    <span className="font-bold not-italic mr-1">{note.commentThreads[note.commentThreads.length - 1].characterName}：</span>
+                                  )}
+                                  {msg.content}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           <div className="flex items-center justify-between mt-2">
                             <span className={`text-[10px] ${subText}`}>{formatDate(note.updatedAt)}</span>
-                            <div className="flex gap-2">
+                            <div className="flex items-center gap-2">
+                              {note.commentThreads.length === 0 && (
+                                <button
+                                  onClick={() => handleAiCommentNote(note, nb)}
+                                  disabled={!!commentingNoteId}
+                                  className={`text-xs ${subText} hover:text-slate-500 transition-colors flex items-center gap-1 disabled:opacity-40`}
+                                >
+                                  {commentingNoteId === note.id ? <Loader2 size={10} className="animate-spin" /> : null}
+                                  AI评
+                                </button>
+                              )}
                               <button onClick={() => { setEditingHighlightNoteId(note.id); setEditingHighlightNoteText(note.content); }}
                                 className={`text-xs ${subText} hover:text-slate-600`}>编辑</button>
                               <button onClick={async () => {
@@ -546,10 +613,69 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                 {notebooks.flatMap((nb) => nb.notes.filter(n => !n.highlightRef).map((n) => ({ note: n, nb }))).map(({ note, nb }) => (
                   <div key={note.id} className={`rounded-2xl p-3 ${cardBg}`}
                     style={{ border: `1px solid ${isDarkMode ? '#4b5563' : '#e5e7eb'}` }}>
-                    <p className={`text-sm line-clamp-3 ${text}`} style={{ fontFamily: '"Noto Serif SC", serif' }}>
-                      {stripMarkdown(note.content) || '空白笔记'}
-                    </p>
-                    <div className={`text-[10px] mt-2 ${subText}`}>{nb.title} · {formatDate(note.updatedAt)}</div>
+                    {editingNoteId === note.id ? (
+                      <div className="flex flex-col gap-2">
+                        <textarea
+                          autoFocus
+                          value={editingNoteText}
+                          onChange={(e) => setEditingNoteText(e.target.value)}
+                          rows={3}
+                          className={`w-full text-sm outline-none resize-none bg-transparent ${text}`}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setEditingNoteId(null)}
+                            className={`px-3 py-1 rounded-full text-xs ${subText}`}>取消</button>
+                          <button onClick={async () => {
+                            const updated = { ...nb, notes: nb.notes.map(n2 => n2.id === note.id ? { ...n2, content: editingNoteText, updatedAt: Date.now() } : n2), updatedAt: Date.now() };
+                            await saveNotebook(updated);
+                            setEditingNoteId(null);
+                            await loadNotes();
+                          }} className="px-3 py-1 rounded-full text-xs font-bold bg-[#1A1A1A] text-white">保存</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className={`text-sm ${text}`} style={{ fontFamily: '"Noto Serif SC", serif' }}>
+                          {stripMarkdown(note.content) || '空白笔记'}
+                        </p>
+                        {note.commentThreads.length > 0 && (
+                          <div className={`mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-600' : 'border-slate-100'} text-xs ${subText} italic`}>
+                            {note.commentThreads[note.commentThreads.length - 1].messages.slice(-1).map(msg => (
+                              <span key={msg.id}>
+                                {note.commentThreads[note.commentThreads.length - 1].characterName && (
+                                  <span className="font-bold not-italic mr-1">{note.commentThreads[note.commentThreads.length - 1].characterName}：</span>
+                                )}
+                                {msg.content}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between mt-2">
+                          <span className={`text-[10px] ${subText}`}>{nb.title} · {formatDate(note.updatedAt)}</span>
+                          <div className="flex items-center gap-2">
+                            {note.commentThreads.length === 0 && (
+                              <button
+                                onClick={() => handleAiCommentNote(note, nb)}
+                                disabled={!!commentingNoteId}
+                                className={`text-xs ${subText} hover:text-slate-500 transition-colors flex items-center gap-1 disabled:opacity-40`}
+                              >
+                                {commentingNoteId === note.id ? <Loader2 size={10} className="animate-spin" /> : null}
+                                AI评
+                              </button>
+                            )}
+                            <button onClick={() => { setEditingNoteId(note.id); setEditingNoteText(note.content); }}
+                              className={`text-xs ${subText} hover:text-slate-600`}>编辑</button>
+                            <button onClick={async () => {
+                              const updated = { ...nb, notes: nb.notes.filter(n2 => n2.id !== note.id), updatedAt: Date.now() };
+                              await saveNotebook(updated);
+                              await loadNotes();
+                            }} className="text-slate-300 hover:text-rose-400 transition-colors">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </>

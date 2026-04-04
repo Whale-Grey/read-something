@@ -82,6 +82,7 @@ interface RunConversationGenerationParams {
   replyBubbleMin?: number;
   replyBubbleMax?: number;
   ragContext?: string;
+  extraInstructions?: string;
 }
 
 type RunGenerationSkipReason =
@@ -748,6 +749,7 @@ interface BuildAiPromptParams {
   replyBubbleMin: number;
   replyBubbleMax: number;
   ragContext?: string;
+  extraInstructions?: string;
 }
 
 interface PromptLineItem {
@@ -915,6 +917,10 @@ const buildAiPromptLineItems = (params: BuildAiPromptParams): PromptLineItem[] =
   pushPromptLine(lines, 'otherInstructions', '每次回复最多输出一个成就。');
   pushPromptLine(lines, 'otherInstructions', '成就格式：【成就：成就名｜图标：一个贴切的emoji｜条件：简短记录触发情景 ｜评价：写一句简短点评】');
   pushPromptLine(lines, 'otherInstructions', '注意：整个成就必须在一条 [气泡] 里完整输出，不要拆成多条。');
+  if (params.extraInstructions) {
+    pushPromptLine(lines, 'otherInstructions', '');
+    pushPromptLine(lines, 'otherInstructions', params.extraInstructions);
+  }
   pushPromptLine(lines, 'otherInstructions', '</tone_and_style>');
   pushPromptLine(lines, 'otherInstructions', '');
   pushPromptLine(lines, 'otherInstructions', '<output_format>');
@@ -1253,6 +1259,7 @@ export const runConversationGeneration = async (
     replyBubbleMin,
     replyBubbleMax,
     ragContext,
+    extraInstructions,
   } = params;
 
   const validationMessage = validateApiConfig(apiConfig);
@@ -1347,6 +1354,7 @@ export const runConversationGeneration = async (
       replyBubbleMin: resolvedReplyBubbleMin,
       replyBubbleMax: resolvedReplyBubbleMax,
       ragContext,
+      extraInstructions,
     });
     console.groupCollapsed(`[AI Prompt:${mode}] ${new Date().toLocaleTimeString()}`);
     console.log(prompt);
