@@ -18,7 +18,7 @@ import ResolvedImage from './ResolvedImage';
 
 // ─── TwemojiIcon ─────────────────────────────────────────────────────────────
 
-const TwemojiIcon: React.FC<{ emoji: string; size?: number }> = ({ emoji, size = 32 }) => {
+const TwemojiIcon: React.FC<{ emoji: string; size?: number; className?: string }> = ({ emoji, size = 32, className = '' }) => {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (!ref.current) return;
@@ -28,7 +28,7 @@ const TwemojiIcon: React.FC<{ emoji: string; size?: number }> = ({ emoji, size =
   return (
     <span
       ref={ref}
-      className="twemoji-icon"
+      className={`twemoji-icon ${className}`.trim()}
       style={{ display: 'inline-block', width: size, height: size, lineHeight: 1, flexShrink: 0 }}
     />
   );
@@ -783,19 +783,43 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
 
         {/* ─── 印章 ──────────────────────────────────────────────────────── */}
         {activeTab === '印章' && (
-          <div className="p-4 flex flex-col gap-3">
+          <div className="p-4 flex flex-col gap-8">
+            {/* SVG defs：emoji滤镜 + badge边框挖圆遮罩 */}
+            <svg width="0" height="0" style={{ position: 'absolute' }}>
+              <defs>
+                <filter id="ach-emoji-stroke" x="-25%" y="-25%" width="150%" height="150%" colorInterpolationFilters="sRGB">
+                  <feGaussianBlur in="SourceAlpha" stdDeviation="2.5" result="blurred"/>
+                  <feComponentTransfer in="blurred" result="expanded">
+                    <feFuncA type="linear" slope="60" intercept="-12"/>
+                  </feComponentTransfer>
+                  <feFlood floodColor="#F3F3F3" floodOpacity="1" result="strokeColor"/>
+                  <feComposite in="strokeColor" in2="expanded" operator="in" result="stroke"/>
+                  <feMerge>
+                    <feMergeNode in="stroke"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+                <mask id="ach-carveout-mask" x="0" y="0" width="100%" height="100%">
+                  <rect x="0" y="0" width="100%" height="100%" fill="white"/>
+                  <path d="M 32,15 A 15,15 0 0,1 47,30 A 15,15 0 0,1 32,45 A 15,15 0 0,1 17,30 A 15,15 0 0,1 32,15 M 32,0 A 30,30 0 0,0 2,30 A 30,30 0 0,0 32,60 A 30,30 0 0,0 62,30 A 30,30 0 0,0 32,0 Z"
+                        fill="black" transform="translate(48, 12)"/>
+                </mask>
+              </defs>
+            </svg>
+
             {achievements.length === 0 ? (
               <div className={`text-center py-8 text-sm ${subText}`}>暂无成就印章</div>
             ) : (
               achievements.map((ach) => (
                 <div
                   key={ach.id}
-                  className="relative rounded-2xl overflow-hidden select-none"
+                  className="relative rounded-2xl select-none"
                   style={{
                     backgroundColor: '#262928',
                     backgroundImage: 'radial-gradient(circle, #333736 1.5px, transparent 1.5px)',
                     backgroundSize: '10px 10px',
-                    padding: '16px 14px 12px',
+                    padding: '64px 14px 14px 14px',
+                    marginTop: '8px',
                   }}
                   onPointerDown={() => {
                     longPressTimerRef.current = setTimeout(() => setLongPressAchId(ach.id), 600);
@@ -804,31 +828,34 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                   onPointerCancel={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
                   onContextMenu={(e) => e.preventDefault()}
                 >
-                  {/* 图标 + 名称 */}
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
-                    <TwemojiIcon emoji={ach.icon} size={32} />
-                    <span style={{ fontSize: '22px', fontWeight: 900, color: '#A5ABAA', lineHeight: 1.2, letterSpacing: '1px', WebkitTextStroke: '6px #1e2120', paintOrder: 'stroke fill' }}>{ach.name}</span>
-                  </div>
-                  {/* 条件 */}
-                  <div style={{ fontSize: '11px', color: 'rgba(165,171,170,0.9)', marginBottom: '8px', lineHeight: 1.5 }}>
-                    <span style={{ opacity: 0.5 }}>条件 </span>{ach.condition}
-                  </div>
-                  {/* 评价 */}
-                  {ach.comment && (
-                    <div style={{ fontSize: '11px', fontStyle: 'italic', color: 'rgba(165,171,170,0.7)', borderTop: '1px solid rgba(165,171,170,0.15)', paddingTop: '8px', marginBottom: '6px' }}>
-                      "{ach.comment}"
+                  {/* badge 描边（中间挖空 emoji 区域） */}
+                  <div className="ach-badge-border" />
+
+                  {/* header-group：emoji + 右侧标题+条件，溢出卡片顶部 */}
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 2,
+                    transform: 'translateY(-15%)',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 4,
+                    zIndex: 10,
+                  }}>
+                    <TwemojiIcon emoji={ach.icon} size={78} className="achievement-emoji-icon" />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 2 }}>
+                      <span className="achievement-title" data-text={ach.name}>{ach.name}</span>
+                      <div style={{ fontSize: '11px', color: 'rgba(165,171,170,0.9)', lineHeight: 1.5 }}>
+                        <span style={{ opacity: 0.5 }}>条件 </span>{ach.condition}
+                      </div>
                     </div>
-                  )}
-                  {/* 来源 — 右下角 */}
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '10px', opacity: 0.4, color: '#A5ABAA', marginTop: '4px' }}>
-                    {ach.characterName}{ach.bookTitle ? ` · ${ach.bookTitle}` : ''} · {formatDate(ach.createdAt)}
                   </div>
 
                   {/* 长按删除弹窗 */}
                   {longPressAchId === ach.id && (
                     <div
                       className="absolute inset-0 flex items-center justify-center rounded-2xl"
-                      style={{ backgroundColor: 'rgba(30,33,32,0.85)', backdropFilter: 'blur(2px)' }}
+                      style={{ backgroundColor: 'rgba(30,33,32,0.85)', backdropFilter: 'blur(2px)', zIndex: 20 }}
                       onPointerDown={(e) => e.stopPropagation()}
                     >
                       <button
@@ -847,6 +874,18 @@ const RecentBookPanel: React.FC<RecentBookPanelProps> = ({
                       </button>
                     </div>
                   )}
+
+                  {/* 评价 */}
+                  {ach.comment && (
+                    <div style={{ fontSize: '11px', fontStyle: 'italic', color: 'rgba(165,171,170,0.7)', borderTop: '1px solid rgba(165,171,170,0.15)', paddingTop: '8px', marginBottom: '6px' }}>
+                      "{ach.comment}"
+                    </div>
+                  )}
+
+                  {/* 来源 — 右下角 */}
+                  <div style={{ textAlign: 'right', fontSize: '10px', opacity: 0.5, color: '#A5ABAA' }}>
+                    {ach.characterName}{ach.bookTitle ? ` · ${ach.bookTitle}` : ''} · {formatDate(ach.createdAt)}
+                  </div>
                 </div>
               ))
             )}

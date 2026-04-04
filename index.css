@@ -16,6 +16,41 @@ span[data-twemoji] > img.emoji,
   vertical-align: top;
 }
 
+/* Achievement card styles */
+.achievement-title {
+  position: relative;
+  z-index: 1;
+  font-size: 22px;
+  font-weight: 900;
+  color: #A5ABAA;
+  line-height: 1.2;
+  letter-spacing: 1px;
+}
+.achievement-title::before {
+  content: attr(data-text);
+  position: absolute;
+  left: 0; top: 0;
+  z-index: -1;
+  -webkit-text-stroke: 8px #262928;
+  text-stroke: 8px #262928;
+}
+.ach-badge-border {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid rgba(165, 171, 170, 0.2);
+  border-radius: inherit;
+  pointer-events: none;
+  mask: url(#ach-carveout-mask);
+  -webkit-mask: url(#ach-carveout-mask);
+}
+.achievement-emoji-icon > img.emoji {
+  width: 100% !important;
+  height: 100% !important;
+  vertical-align: top;
+  transform: rotate(-12deg);
+  filter: url(#ach-emoji-stroke) grayscale(100%) sepia(20%) hue-rotate(130deg) brightness(85%) contrast(110%);
+}
+
 @tailwind base;
 @tailwind components;
 
