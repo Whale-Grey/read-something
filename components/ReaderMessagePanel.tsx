@@ -3574,7 +3574,7 @@ const ReaderMessagePanel = React.forwardRef<
           </div>
           </div>
 
-          <div className="rm-input-area px-3 pt-1 pb-3 relative z-10" style={{ paddingBottom: `${12 + safeBottomInset}px` }}>
+          <div className="rm-input-area px-3 pt-0 pb-3 relative z-10" style={{ paddingBottom: `${12 + safeBottomInset}px` }}>
             {toast && (
               <div
                 className={`absolute z-20 left-1/2 -translate-x-1/2 -top-8 px-6 py-2 rounded-full flex items-center gap-2 border backdrop-blur-md text-xs font-bold ${
