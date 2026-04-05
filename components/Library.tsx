@@ -196,6 +196,17 @@ const Library: React.FC<LibraryProps> = ({
   // Common Modal State
   const [urlInputMode, setUrlInputMode] = useState(false);
   const [tempCoverUrl, setTempCoverUrl] = useState('');
+  const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
+
+  const PRESET_COVER_IMAGES = [
+    '/covers/cover-01.jpg',
+    '/covers/cover-02.jpg',
+    '/covers/cover-03.jpg',
+    '/covers/cover-04.jpg',
+    '/covers/cover-05.jpg',
+    '/covers/cover-06.jpg',
+    '/covers/cover-07.jpg',
+  ];
   const [tagInput, setTagInput] = useState('');
   const [txtFileUrlMode, setTxtFileUrlMode] = useState(false);
   const [tempTxtUrl, setTempTxtUrl] = useState('');
@@ -617,6 +628,7 @@ const Library: React.FC<LibraryProps> = ({
   const resetModalState = () => {
      setTempCoverUrl('');
      setUrlInputMode(false);
+     setLibraryPickerOpen(false);
      setTagInput('');
      setTempTxtUrl('');
      setTxtFileUrlMode(false);
@@ -1222,7 +1234,7 @@ const Library: React.FC<LibraryProps> = ({
 
             <div className="flex-1">
               {!urlInputMode ? (
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className={`flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 ${btnClass} text-slate-500 hover:text-rose-400`}
@@ -1236,6 +1248,13 @@ const Library: React.FC<LibraryProps> = ({
                     className={`flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 ${btnClass} text-slate-500 hover:text-rose-400`}
                   >
                     <Link size={12} /> 网络链接
+                  </button>
+
+                  <button
+                    onClick={() => setLibraryPickerOpen(v => !v)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 ${btnClass} ${libraryPickerOpen ? 'text-rose-400' : 'text-slate-500 hover:text-rose-400'}`}
+                  >
+                    <Image size={12} /> 图片库
                   </button>
                 </div>
               ) : (
@@ -1253,6 +1272,36 @@ const Library: React.FC<LibraryProps> = ({
               )}
             </div>
           </div>
+
+          {/* Image library picker */}
+          {libraryPickerOpen && (
+            <div className="grid grid-cols-4 gap-2 pt-1">
+              {PRESET_COVER_IMAGES.map((src) => {
+                const isSelected = book.coverUrl === src;
+                return (
+                  <button
+                    key={src}
+                    onClick={() => {
+                      const setTarget = isEditModalOpen ? setEditingBook : setImportingBook;
+                      // @ts-ignore
+                      setTarget({ ...book, coverUrl: src });
+                      setLibraryPickerOpen(false);
+                    }}
+                    className={`relative aspect-[3/4] rounded-lg overflow-hidden transition-all ${
+                      isSelected ? 'ring-2 ring-rose-400 scale-105' : 'opacity-80 hover:opacity-100 hover:scale-105'
+                    }`}
+                  >
+                    <img src={src} alt="" className="w-full h-full object-cover" />
+                    {isSelected && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                        <Check size={16} className="text-white" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="space-y-3">
