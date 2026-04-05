@@ -1513,7 +1513,7 @@ const Library: React.FC<LibraryProps> = ({
       <div className={`flex-1 flex flex-col p-6 pb-28 overflow-y-auto no-scrollbar ${containerClass}`}>
         {mode === 'home' && <header className="mb-4 pt-2 relative">
           {/* Editable Signature */}
-          <div className="mb-2">
+          <div className="-mt-1 mb-1">
             {isEditingSig ? (
                <div className="flex items-start gap-2">
                  <textarea
@@ -1524,7 +1524,7 @@ const Library: React.FC<LibraryProps> = ({
                    onBlur={handleSaveSig}
                    onKeyDown={handleKeyDown}
                    className={`w-full min-w-0 px-2 py-1 rounded-lg outline-none resize-none ${inputClass}`}
-                   style={{ fontSize: '28px', fontWeight: 600, fontFamily: "'MiSans', 'PingFang SC', 'Noto Sans SC', sans-serif", color: '#1A1A1A' }}
+                   style={{ fontSize: '48px', fontWeight: 700, fontFamily: 'Garamond, Georgia, serif', letterSpacing: '0.02em', color: '#1A1A1A', lineHeight: 1.2 }}
                  />
                  <button onMouseDown={handleSaveSig} className="text-emerald-500 flex-shrink-0 mt-2"><Check size={16} /></button>
                </div>
@@ -1533,10 +1533,10 @@ const Library: React.FC<LibraryProps> = ({
                  onClick={() => setIsEditingSig(true)}
                  className="group flex items-start gap-2 cursor-pointer"
                >
-                 <p style={{ fontSize: '28px', fontWeight: 600, fontFamily: "'MiSans', 'PingFang SC', 'Noto Sans SC', sans-serif", color: '#1A1A1A', lineHeight: 1.3 }}>
-                   {userSignature || <span className="opacity-40 italic" style={{ fontSize: '18px' }}>点击编辑签名...</span>}
+                 <p style={{ fontSize: '48px', fontWeight: 700, fontFamily: 'Garamond, Georgia, serif', letterSpacing: '0.02em', color: isDarkMode ? '#e2e8f0' : '#1A1A1A', lineHeight: 1.2 }}>
+                   {userSignature || <span className="opacity-40 italic" style={{ fontSize: '24px', fontFamily: 'sans-serif', fontWeight: 400 }}>点击编辑签名...</span>}
                  </p>
-                 <Edit2 size={14} className="opacity-0 group-hover:opacity-40 text-slate-400 flex-shrink-0 mt-2" />
+                 <Edit2 size={14} className="opacity-0 group-hover:opacity-40 text-slate-400 flex-shrink-0 mt-3" />
                </div>
             )}
           </div>
@@ -1955,8 +1955,8 @@ const Library: React.FC<LibraryProps> = ({
       {/* Edit Book Modal */}
       {isEditModalOpen && editingBook && (
         <ModalPortal>
-          <div className={`fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-500/20 backdrop-blur-sm ${closingModal === 'edit' ? 'app-fade-exit' : 'app-fade-enter'}`}>
-          <div className={`${isDarkMode ? 'bg-[#2d3748] border-slate-600' : 'neu-bg border-white/50'} w-full max-w-sm rounded-2xl p-6 shadow-2xl border relative flex flex-col ${closingModal === 'edit' ? 'app-fade-exit' : 'app-fade-enter'}`} style={{ maxHeight: 'calc(var(--app-screen-height) - 9rem)' }}>
+          <div className={`fixed inset-0 z-[100] flex items-start justify-center pt-10 px-6 pb-6 bg-slate-500/20 backdrop-blur-sm overflow-y-auto ${closingModal === 'edit' ? 'app-fade-exit' : 'app-fade-enter'}`}>
+          <div className={`${isDarkMode ? 'bg-[#2d3748] border-slate-600' : 'neu-bg border-white/50'} w-full max-w-sm rounded-2xl p-6 shadow-2xl border relative flex flex-col ${closingModal === 'edit' ? 'app-fade-exit' : 'app-fade-enter'}`} style={{ maxHeight: 'none' }}>
             <button onClick={closeEditModal} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
               <X size={20} />
             </button>
@@ -1993,8 +1993,8 @@ const Library: React.FC<LibraryProps> = ({
       {/* Import Book Modal */}
       {isImportModalOpen && (
          <ModalPortal>
-           <div className={`fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-500/20 backdrop-blur-sm ${closingModal === 'import' ? 'app-fade-exit' : 'app-fade-enter'}`}>
-            <div className={`${isDarkMode ? 'bg-[#2d3748] border-slate-600' : 'neu-bg border-white/50'} w-full max-w-sm rounded-2xl p-6 shadow-2xl border relative flex flex-col ${closingModal === 'import' ? 'app-fade-exit' : 'app-fade-enter'}`} style={{ maxHeight: 'calc(var(--app-screen-height) - 9rem)' }}>
+           <div className={`fixed inset-0 z-[100] flex items-start justify-center pt-10 px-6 pb-6 bg-slate-500/20 backdrop-blur-sm overflow-y-auto ${closingModal === 'import' ? 'app-fade-exit' : 'app-fade-enter'}`}>
+            <div className={`${isDarkMode ? 'bg-[#2d3748] border-slate-600' : 'neu-bg border-white/50'} w-full max-w-sm rounded-2xl p-6 shadow-2xl border relative flex flex-col ${closingModal === 'import' ? 'app-fade-exit' : 'app-fade-enter'}`} style={{ maxHeight: 'none' }}>
                <button onClick={closeImportModal} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
                   <X size={20} />
                </button>

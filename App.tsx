@@ -41,7 +41,7 @@ const DEFAULT_API_CONFIG: ApiConfig = {
 const DEFAULT_PRESETS: ApiPreset[] = [];
 
 // Default Rose Color
-const DEFAULT_THEME_COLOR = '#e28a9d';
+const DEFAULT_THEME_COLOR = '#1A1A1A';
 const FONT_BASELINE_MULTIPLIER = 1.2; // Old 120% is the new 100%
 const SAFE_AREA_DEFAULT_MIGRATION_KEY = 'app_safe_area_default_v2';
 const DAILY_READING_MS_STORAGE_KEY = 'app_daily_reading_ms';
@@ -745,7 +745,7 @@ const App: React.FC = () => {
   const [userSignature, setUserSignature] = useState(() => {
     // Check for null strictly so we allow empty string as a valid signature
     const saved = localStorage.getItem('app_user_signature');
-    return saved !== null ? saved : "黑夜无论怎样漫长 白昼总会到来";
+    return saved !== null ? saved : "No one is an island.";
   });
   
   const [activePersonaId, setActivePersonaId] = useState<string | null>(() => {
