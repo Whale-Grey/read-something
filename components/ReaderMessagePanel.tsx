@@ -3344,18 +3344,24 @@ const ReaderMessagePanel = React.forwardRef<
             height: `${resolvedPanelVisualHeight}px`,
           }}
         >
-          <div className="flex flex-col h-full min-h-0">
-          <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="flex flex-col h-full min-h-0 relative">
           {readerMoreAppearance.chatBackgroundImage && (
             <div className="absolute inset-0 pointer-events-none z-0">
-              <ResolvedImage
-                src={readerMoreAppearance.chatBackgroundImage}
-                alt="chat-background"
-                className="w-full h-full object-cover"
-              />
-              <div className={`absolute inset-0 ${isDarkMode ? 'bg-black/35' : 'bg-white/25'}`} />
+              {readerMoreAppearance.chatBackgroundImage.startsWith('solid:') ? (
+                <div className="w-full h-full" style={{ backgroundColor: readerMoreAppearance.chatBackgroundImage.slice(6) }} />
+              ) : (
+                <>
+                  <ResolvedImage
+                    src={readerMoreAppearance.chatBackgroundImage}
+                    alt="chat-background"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className={`absolute inset-0 ${isDarkMode ? 'bg-black/35' : 'bg-white/25'}`} />
+                </>
+              )}
             </div>
           )}
+          <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
           <div
             ref={messagesContainerRef}
             className={`rm-messages reader-scroll-panel reader-message-scroll flex-1 min-h-0 overflow-y-auto p-4 px-6 transition-transform duration-200 ${
@@ -3415,7 +3421,7 @@ const ReaderMessagePanel = React.forwardRef<
               const renderNormalBubble = (content: string, key?: string) => (
                 <div key={key} className={`flex ${isUser ? 'justify-end' : 'justify-start'} ${isDeleteMode ? 'cursor-pointer' : ''}`}
                   onClick={() => handleBubbleClick(message.id)}>
-                  <div className={`max-w-[88%] flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                  <div className={`max-w-[88%] flex items-start gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
                     {!isUser && (
                       <div className={`rm-avatar w-7 h-7 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center ${isDarkMode ? 'bg-[#1a202c]' : 'neu-pressed'}`}>
                         {renderCharacterAvatar()}
@@ -3489,7 +3495,7 @@ const ReaderMessagePanel = React.forwardRef<
                   className={`flex ${isUser ? 'justify-end' : 'justify-start'} ${isDeleteMode ? 'cursor-pointer' : ''}`}
                   onClick={() => handleBubbleClick(message.id)}
                 >
-                  <div className={`max-w-[88%] flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                  <div className={`max-w-[88%] flex items-start gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
                     {!isUser && (
                       <div
                         className={`rm-avatar w-7 h-7 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center ${
@@ -3566,8 +3572,9 @@ const ReaderMessagePanel = React.forwardRef<
             })}
             </div>
           </div>
+          </div>
 
-          <div className="rm-input-area px-4 pt-2 pb-3 relative z-10" style={{ paddingBottom: `${12 + safeBottomInset}px` }}>
+          <div className="rm-input-area px-3 pt-2 pb-3 relative z-10" style={{ paddingBottom: `${12 + safeBottomInset}px` }}>
             {toast && (
               <div
                 className={`absolute z-20 left-1/2 -translate-x-1/2 -top-8 px-6 py-2 rounded-full flex items-center gap-2 border backdrop-blur-md text-xs font-bold ${
@@ -3625,7 +3632,7 @@ const ReaderMessagePanel = React.forwardRef<
               </div>
             )}
 
-            <div className={`rm-input-wrap flex items-center gap-3 rounded-full px-2 py-1 ${isDarkMode ? 'bg-[#1a202c] shadow-inner' : 'neu-pressed'}`}>
+            <div className={`rm-input-wrap flex items-center gap-2 rounded px-2 py-0.5 ${isDarkMode ? 'bg-[#1a202c] border border-slate-700' : 'bg-slate-100 border border-slate-200'}`}>
               <input
                 type="text"
                 value={inputText}
@@ -3683,30 +3690,20 @@ const ReaderMessagePanel = React.forwardRef<
                   <button
                     onClick={() => void handleRefreshReply()}
                     disabled={isManualBusy}
-                    className={`rm-retry-btn p-2 rounded-full transition-all ${
+                    className={`rm-retry-btn p-1.5 transition-all ${
                       isManualBusy
                         ? 'text-slate-400 opacity-50'
                         : isDarkMode
-                          ? 'bg-[#334155] text-slate-200'
-                          : 'neu-flat text-slate-500 active:scale-95'
+                          ? 'text-slate-400 hover:text-slate-200'
+                          : 'text-slate-400 hover:text-slate-600 active:scale-95'
                     }`}
                     aria-label="refresh-last-ai-reply"
                   >
-                    <RotateCcw size={18} />
+                    <RotateCcw size={16} />
                   </button>
                 </>
               )}
             </div>
-          </div>
-            </div>
-          <div
-            className="h-8 flex items-center justify-center cursor-pointer opacity-60 hover:opacity-100 touch-none"
-            onPointerDown={handlePanelGripPointerDown}
-            onPointerMove={handlePanelGripPointerMove}
-            onPointerUp={handlePanelGripPointerUp}
-            onPointerCancel={handlePanelGripPointerCancel}
-          >
-            <div className={`w-12 h-1.5 rounded-full ${isDarkMode ? 'bg-slate-600' : 'bg-slate-300'}`} />
           </div>
           </div>
         </div>

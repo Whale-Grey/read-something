@@ -3185,6 +3185,9 @@ const Reader: React.FC<ReaderProps> = ({
       return;
     }
     setSelectionPopup(null);
+    if (messagePanelRef.current?.isOpen) {
+      messagePanelRef.current.toggle();
+    }
   };
 
   const updateReaderTypography = (patch: Partial<ReaderTypographyStyle>) => {

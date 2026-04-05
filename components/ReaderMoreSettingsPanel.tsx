@@ -17,7 +17,17 @@ export interface ReaderArchiveOption {
 }
 
 type TabKey = 'appearance' | 'feature' | 'session';
-type ModalType = 'none' | 'book' | 'chat' | 'bgUrl';
+type ModalType = 'none' | 'book' | 'chat' | 'bgUrl' | 'bgLib';
+
+const PRESET_COVER_IMAGES = [
+  '/read-something/covers/cover-01.jpg',
+  '/read-something/covers/cover-02.jpg',
+  '/read-something/covers/cover-03.jpg',
+  '/read-something/covers/cover-04.jpg',
+  '/read-something/covers/cover-05.jpg',
+  '/read-something/covers/cover-06.jpg',
+  '/read-something/covers/cover-07.jpg',
+];
 const PANEL_VIEW_TRANSITION_MS = 420;
 const MODAL_FADE_TRANSITION_MS = 220;
 
@@ -444,6 +454,8 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
   const [modal, setModal] = useState<ModalType>('none');
   const [modalClosing, setModalClosing] = useState(false);
   const [bgUrlInput, setBgUrlInput] = useState('');
+  const [bgColorInput, setBgColorInput] = useState('#f8f4ec');
+  const [showBgColorPicker, setShowBgColorPicker] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [bookRangeDraft, setBookRangeDraft] = useState({ start: '1', end: '1' });
@@ -588,42 +600,38 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
     return summaryApiPresetOptions.some((preset) => preset.value === id) ? id : '';
   }, [summaryApiPresetOptions, featureSettings.summaryApiPresetId]);
   const cardClass = isDarkMode
-    ? 'bg-[#2d3748] shadow-[6px_6px_12px_#232b39,-6px_-6px_12px_#374357]'
-    : 'bg-[#e0e5ec] shadow-[6px_6px_12px_#a3b1c6,-6px_-6px_12px_#ffffff]';
-  const raisedCardClass = isDarkMode ? 'bg-[#2d3748] shadow-[6px_6px_12px_#232b39,-6px_-6px_12px_#374357]' : 'neu-flat';
+    ? 'bg-[#2d3748] border border-slate-700'
+    : 'bg-white border border-slate-200';
+  const raisedCardClass = isDarkMode
+    ? 'bg-[#2d3748] border border-slate-700'
+    : 'bg-white border border-slate-200';
   const pressedClass = isDarkMode
-    ? 'bg-[#2d3748] shadow-[inset_5px_5px_10px_#232b39,inset_-5px_-5px_10px_#374357]'
-    : 'bg-[#e0e5ec] shadow-[inset_5px_5px_10px_#a3b1c6,inset_-5px_-5px_10px_#ffffff]';
+    ? 'bg-[#1a202c] border border-slate-700/60'
+    : 'bg-slate-100 border border-slate-200';
   const btnClass = isDarkMode
-    ? 'bg-[#2d3748] shadow-[5px_5px_10px_#232b39,-5px_-5px_10px_#374357] text-slate-200'
-    : 'bg-[#e0e5ec] shadow-[5px_5px_10px_#a3b1c6,-5px_-5px_10px_#ffffff] text-slate-700';
+    ? 'bg-[#2d3748] border border-slate-700 text-slate-200'
+    : 'bg-white border border-slate-200 text-slate-700';
   const inputClass = isDarkMode
-    ? 'bg-[#2d3748] shadow-[inset_4px_4px_8px_#232b39,inset_-4px_-4px_8px_#374357] text-slate-200 placeholder-slate-500'
-    : 'bg-[#e0e5ec] shadow-[inset_4px_4px_8px_#a3b1c6,inset_-4px_-4px_8px_#ffffff] text-slate-600 placeholder-slate-400';
+    ? 'bg-[#1a202c] border border-slate-700 text-slate-200 placeholder-slate-500'
+    : 'bg-slate-50 border border-slate-200 text-slate-600 placeholder-slate-400';
   const headingClass = isDarkMode ? 'text-slate-200' : 'text-slate-700';
-  const panelMainCardBaseClass = isDarkMode ? 'bg-[#2d3748]' : 'bg-[#e0e5ec]';
-  const panelSurfaceShadowClass = isDarkMode
-    ? 'shadow-[4px_6px_12px_rgba(35,43,57,0.28),-4px_6px_12px_rgba(35,43,57,0.28)]'
-    : 'shadow-[4px_6px_12px_rgba(163,177,198,0.28),-4px_6px_12px_rgba(163,177,198,0.28)]';
-  const tabSideShadowClass = isDarkMode
-    ? 'shadow-[6px_7px_14px_rgba(35,43,57,0.36),-6px_7px_14px_rgba(35,43,57,0.36)]'
-    : 'shadow-[6px_7px_14px_rgba(163,177,198,0.36),-6px_7px_14px_rgba(163,177,198,0.36)]';
-  const tabTopSoftShadowClass = isDarkMode
-    ? 'shadow-[0_-4px_10px_rgba(35,43,57,0.28)]'
-    : 'shadow-[0_-4px_10px_rgba(163,177,198,0.28)]';
+  const panelMainCardBaseClass = isDarkMode ? 'bg-[#2d3748]' : 'bg-[#f5f5f5]';
+  const panelSurfaceShadowClass = '';
+  const tabSideShadowClass = '';
+  const tabTopSoftShadowClass = '';
   const panelMainCardShadowClass = panelSurfaceShadowClass;
-  const tabActivePlateClass = `${panelMainCardBaseClass} ${tabSideShadowClass} ${tabTopSoftShadowClass}`;
-  const activeBtnClass = isDarkMode
-    ? 'active:shadow-[inset_3px_3px_6px_#232b39,inset_-3px_-3px_6px_#374357] active:translate-y-px'
-    : 'active:shadow-[inset_3px_3px_6px_#a3b1c6,inset_-3px_-3px_6px_#ffffff] active:translate-y-px';
+  const tabActivePlateClass = `${panelMainCardBaseClass}`;
+  const activeBtnClass = 'active:opacity-80 active:translate-y-px';
   const iconDangerEnabledClass = isDarkMode ? 'text-[#cf8f97]' : 'text-[#bf616b]';
   const iconDisabledGrayClass = isDarkMode ? 'text-slate-500' : 'text-slate-400';
   const disabledIconButtonClass = `${btnClass} ${iconDisabledGrayClass} opacity-55 cursor-not-allowed`;
   const enabledDangerIconButtonClass = `${iconDangerEnabledClass} ${btnClass} ${activeBtnClass}`;
-  const archiveCardDefaultClass = isDarkMode ? 'bg-[#1a202c] text-slate-200' : 'bg-white text-slate-700';
+  const archiveCardDefaultClass = isDarkMode
+    ? 'bg-[#1a202c] border border-slate-700 text-slate-200'
+    : 'bg-white border border-slate-200 text-slate-700';
   const archiveCardCurrentClass = isDarkMode
     ? 'bg-rose-500/20 text-slate-100 border border-rose-300/40'
-    : 'bg-rose-200 text-slate-700 border border-rose-400/60';
+    : 'bg-rose-50 text-slate-700 border border-rose-300';
   const archiveWarningIconClass = isDarkMode ? 'text-amber-300/90' : 'text-amber-600/85';
   const activeTabIndex = TAB_ORDER.indexOf(tab);
   const tabContentAnimClass = tabDirection === 'right' ? 'stats-slide-left' : 'stats-slide-right';
@@ -776,10 +784,10 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
     return (
       <div className={`fixed inset-0 z-[95] flex items-center justify-center p-6 ${modalClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
         <button type="button" className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={closeModal} />
-        <div className={`relative w-full max-w-2xl max-h-[80vh] rounded-3xl p-5 flex flex-col ${isDarkMode ? 'bg-[#2d3748] border-slate-600' : 'bg-[#e0e5ec] border-white/50'} border shadow-2xl ${modalClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
+        <div className={`relative w-full max-w-2xl max-h-[80vh] rounded-xl p-5 flex flex-col ${isDarkMode ? 'bg-[#2d3748] border-slate-700' : 'bg-white border-slate-200'} border ${modalClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
           <div className="flex items-center justify-between mb-4">
-            <div className={`text-lg font-bold ${headingClass}`}>{isBook ? '书籍内容总结' : '聊天记录总结'}</div>
-            <button type="button" onClick={closeModal} className={`w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-400 transition-colors ${btnClass} ${activeBtnClass}`}>
+            <div className={`text-base font-bold ${headingClass}`}>{isBook ? '书籍内容总结' : '聊天记录总结'}</div>
+            <button type="button" onClick={closeModal} className={`w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 transition-colors ${btnClass} ${activeBtnClass}`}>
               <X size={18} />
             </button>
           </div>
@@ -822,7 +830,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                   type="button"
                   onClick={condenseMergeSelectedCards}
                   disabled={selectedCardIds.length < 2 || summaryTaskRunning}
-                  className={`h-8 px-3 rounded-full text-xs font-bold transition-all ${
+                  className={`h-8 px-3 rounded-lg text-xs font-bold transition-all ${
                     selectedCardIds.length >= 2 && !summaryTaskRunning
                       ? `${btnClass} ${activeBtnClass} !text-slate-500`
                       : disabledIconButtonClass
@@ -834,7 +842,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                   type="button"
                   onClick={mergeSelectedCards}
                   disabled={selectedCardIds.length < 2}
-                  className={`h-8 px-3 rounded-full text-xs font-bold transition-all ${
+                  className={`h-8 px-3 rounded-lg text-xs font-bold transition-all ${
                     selectedCardIds.length >= 2
                       ? `${btnClass} ${activeBtnClass} !text-slate-500`
                       : disabledIconButtonClass
@@ -851,7 +859,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                 <button
                   type="button"
                   onClick={() => setSelectedCardIds(cards.map((c) => c.id))}
-                  className={`h-7 px-3 rounded-full text-xs font-bold transition-all ${btnClass} ${activeBtnClass} !text-slate-500`}
+                  className={`h-7 px-3 rounded-lg text-xs font-bold transition-all ${btnClass} ${activeBtnClass} !text-slate-500`}
                 >
                   全选
                 </button>
@@ -859,7 +867,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                   type="button"
                   onClick={() => setSelectedCardIds([])}
                   disabled={selectedCardIds.length === 0}
-                  className={`h-7 px-3 rounded-full text-xs font-bold transition-all ${
+                  className={`h-7 px-3 rounded-lg text-xs font-bold transition-all ${
                     selectedCardIds.length > 0
                       ? `${btnClass} ${activeBtnClass} !text-slate-500`
                       : disabledIconButtonClass
@@ -880,12 +888,12 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                     }
                   : undefined;
                 return (
-                <div key={card.id} className={`rounded-2xl p-4 ${raisedCardClass}`}>
+                <div key={card.id} className={`rounded-xl p-4 ${raisedCardClass}`}>
                   <div className="mb-3 flex justify-center">
                     <button
                       type="button"
                       onClick={() => toggleCardSelected(card.id)}
-                      className={`h-8 px-3 rounded-full text-xs font-bold flex items-center justify-center gap-2 transition-all ${btnClass} ${activeBtnClass} !text-slate-500`}
+                      className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all ${btnClass} ${activeBtnClass} !text-slate-500`}
                     >
                       <span className={`w-4 h-4 rounded border flex items-center justify-center ${
                         isCardSelected ? 'text-white' : 'border-slate-400'
@@ -901,7 +909,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                     <span>{isBook ? `字符区间` : `消息区间`}：{card.start}-{card.end}</span>
                     <div className="flex items-center gap-2">
                       <span>{ts(card.updatedAt)}</span>
-                      <button type="button" onClick={() => onDelete(card.id)} className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${enabledDangerIconButtonClass}`}>
+                      <button type="button" onClick={() => onDelete(card.id)} className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${enabledDangerIconButtonClass}`}>
                         <Trash2 size={13} />
                       </button>
                     </div>
@@ -920,20 +928,22 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
     return (
       <div className={`fixed inset-0 z-[95] flex items-center justify-center p-6 ${modalClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
         <button type="button" className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={closeModal} />
-        <div className={`relative w-full max-w-md rounded-2xl p-6 ${isDarkMode ? 'bg-[#2d3748] border-slate-600' : 'bg-[#e0e5ec] border-white/50'} border shadow-2xl ${modalClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
-          <button type="button" onClick={closeModal} className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-400 transition-colors ${btnClass} ${activeBtnClass}`}>
-            <X size={18} />
-          </button>
-          <h3 className={`text-lg font-bold mb-6 ${headingClass}`}>输入网络链接</h3>
+        <div className={`relative w-full max-w-md rounded-xl p-5 ${isDarkMode ? 'bg-[#2d3748] border-slate-700' : 'bg-white border-slate-200'} border ${modalClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className={`text-base font-bold ${headingClass}`}>输入网络链接</h3>
+            <button type="button" onClick={closeModal} className={`w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 transition-colors ${btnClass} ${activeBtnClass}`}>
+              <X size={16} />
+            </button>
+          </div>
           <input
             type="text"
             value={bgUrlInput}
             onChange={(e) => setBgUrlInput(e.target.value)}
             placeholder="https://example.com/image.png"
-            className={`w-full h-12 px-4 rounded-xl text-sm outline-none mb-4 ${inputClass}`}
+            className={`w-full h-10 px-3 rounded-lg text-sm outline-none mb-4 ${inputClass}`}
           />
-          <div className="flex gap-3">
-            <button onClick={closeModal} className={`flex-1 h-11 rounded-full text-slate-500 text-sm font-bold ${btnClass} ${activeBtnClass} transition-all`}>
+          <div className="flex gap-2">
+            <button onClick={closeModal} className={`flex-1 h-10 rounded-lg text-slate-500 text-sm font-bold ${btnClass} ${activeBtnClass} transition-all`}>
               取消
             </button>
             <button
@@ -943,10 +953,43 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                 setBgUrlInput('');
               }}
               disabled={!bgUrlInput.trim()}
-              className={`flex-1 h-11 rounded-full text-white bg-rose-400 shadow-lg hover:bg-rose-500 text-sm font-bold disabled:opacity-50 ${activeBtnClass} transition-all`}
+              className={`flex-1 h-10 rounded-lg text-white bg-rose-400 hover:bg-rose-500 text-sm font-bold disabled:opacity-50 ${activeBtnClass} transition-all`}
             >
               确认
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderBgLibModal = () => {
+    if (modal !== 'bgLib') return null;
+    return (
+      <div className={`fixed inset-0 z-[95] flex items-center justify-center p-6 ${modalClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
+        <button type="button" className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={closeModal} />
+        <div className={`relative w-full max-w-md rounded-xl p-5 flex flex-col ${isDarkMode ? 'bg-[#2d3748] border-slate-700' : 'bg-white border-slate-200'} border ${modalClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className={`text-base font-bold ${headingClass}`}>背景模板库</h3>
+            <button type="button" onClick={closeModal} className={`w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 transition-colors ${btnClass} ${activeBtnClass}`}>
+              <X size={16} />
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {PRESET_COVER_IMAGES.map((src) => (
+              <button
+                key={src}
+                type="button"
+                onClick={() => { onSetChatBackgroundImageFromUrl(src); closeModal(); }}
+                className={`aspect-[3/4] rounded-lg overflow-hidden border-2 transition-all active:scale-95 ${
+                  appearanceSettings.chatBackgroundImage === src
+                    ? 'border-rose-400'
+                    : isDarkMode ? 'border-slate-700 hover:border-slate-500' : 'border-slate-200 hover:border-slate-400'
+                }`}
+              >
+                <ResolvedImage src={src} alt="背景" className="w-full h-full object-cover" />
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -958,17 +1001,17 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
   return (
     <>
       <div
-        className={`absolute inset-0 z-[90] ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#e0e5ec]'}`}
+        className={`absolute inset-0 z-[90] ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#f5f5f5]'}`}
         style={{
           paddingTop: `${Math.max(0, safeAreaTop || 0)}px`,
           paddingBottom: `${Math.max(0, safeAreaBottom || 0)}px`,
         }}
       >
-        <div className={`h-full overflow-hidden overscroll-none ${closing ? 'app-view-exit-right' : 'app-view-enter-left'} ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#e0e5ec]'}`} style={panelMotionStyle}>
+        <div className={`h-full overflow-hidden overscroll-none ${closing ? 'app-view-exit-right' : 'app-view-enter-left'} ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#f5f5f5]'}`} style={panelMotionStyle}>
           <div className="h-full flex flex-col">
             {/* Header */}
-            <div className={`flex items-center gap-3 p-4 z-10 transition-colors ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#e0e5ec]'}`}>
-              <button type="button" onClick={onClose} className={`w-10 h-10 rounded-full flex items-center justify-center hover:text-rose-400 transition-colors ${btnClass} ${activeBtnClass}`}>
+            <div className={`flex items-center gap-3 p-4 z-10 transition-colors ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#f5f5f5]'}`}>
+              <button type="button" onClick={onClose} className={`w-9 h-9 rounded-lg flex items-center justify-center hover:text-rose-400 transition-colors ${btnClass} ${activeBtnClass}`}>
                 <ArrowLeft size={18} />
               </button>
               <div className={`text-base font-bold ${headingClass}`}>更多设置</div>
@@ -981,14 +1024,14 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                   className="absolute inset-y-0 left-0 w-1/4 pointer-events-none transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
                   style={{ transform: `translateX(${Math.max(0, activeTabIndex) * 100}%)` }}
                 >
-                  <div className={`h-11 rounded-t-2xl ${tabActivePlateClass}`} />
+                  <div className={`h-11 rounded-t-lg ${tabActivePlateClass}`} />
                 </div>
                 {TAB_ITEMS.map((it) => (
                   <button
                     key={it.key}
                     type="button"
                     onClick={() => handleTabChange(it.key)}
-                    className={`relative z-10 h-11 text-sm font-bold rounded-t-2xl transition-all flex items-center justify-center gap-1.5 ${
+                    className={`relative z-10 h-11 text-sm font-bold rounded-t-lg transition-all flex items-center justify-center gap-1.5 ${
                       tab === it.key
                         ? (isDarkMode ? 'text-rose-300' : 'text-rose-500')
                         : 'bg-transparent text-slate-400 hover:text-slate-300'
@@ -997,7 +1040,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                     <it.icon size={16} />
                     <span>{it.label}</span>
                     {tab === it.key && (
-                      <div className={`absolute bottom-0 left-0 right-0 h-1 ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#e0e5ec]'}`} />
+                      <div className={`absolute bottom-0 left-0 right-0 h-1 ${isDarkMode ? 'bg-[#2d3748]' : 'bg-[#f5f5f5]'}`} />
                     )}
                   </button>
                 ))}
@@ -1012,7 +1055,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
             >
               <div className={closing ? 'app-view-exit-right' : 'app-view-enter-left'} style={panelMotionStyle}>
                 <div key={tab} className={tabContentAnimClass}>
-                  <div className={`rounded-t-none rounded-b-2xl p-4 ${panelMainCardBaseClass} ${panelMainCardShadowClass}`}>
+                  <div className={`rounded-t-none rounded-b-lg p-4 ${panelMainCardBaseClass} ${panelMainCardShadowClass}`}>
                 {tab === 'appearance' && (
                   <div className="space-y-0">
                     {/* 气泡字体大小 */}
@@ -1036,38 +1079,73 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                     {/* 聊天背景图片 */}
                     <div className="py-5">
                       <div className={`text-sm font-bold mb-3 ${headingClass}`}>聊天背景图片</div>
-                      <div className={`mb-3 aspect-square rounded-2xl overflow-hidden border border-slate-300/20 ${pressedClass}`}>
+                      <div className={`mb-3 aspect-video rounded-lg overflow-hidden border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                         {appearanceSettings.chatBackgroundImage ? (
-                          <ResolvedImage src={appearanceSettings.chatBackgroundImage} alt="bg" className="w-full h-full object-cover" />
+                          appearanceSettings.chatBackgroundImage.startsWith('solid:') ? (
+                            <div className="w-full h-full" style={{ backgroundColor: appearanceSettings.chatBackgroundImage.slice(6) }} />
+                          ) : (
+                            <ResolvedImage src={appearanceSettings.chatBackgroundImage} alt="bg" className="w-full h-full object-cover" />
+                          )
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <ImageIcon size={44} className={isDarkMode ? 'text-slate-500' : 'text-slate-400'} />
+                          <div className={`w-full h-full flex items-center justify-center ${pressedClass}`}>
+                            <ImageIcon size={36} className={isDarkMode ? 'text-slate-500' : 'text-slate-400'} />
                           </div>
                         )}
                       </div>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => fileInputRef.current?.click()} className={`flex-1 h-10 rounded-xl text-sm flex items-center justify-center gap-2 ${btnClass} ${activeBtnClass} transition-all`}>
-                          <ImageIcon size={16} />
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} className={`h-10 rounded-lg text-sm flex items-center justify-center gap-2 ${btnClass} ${activeBtnClass} transition-all`}>
+                          <ImageIcon size={15} />
                           <span>本地上传</span>
                         </button>
-                        <button type="button" onClick={() => openModal('bgUrl')} className={`flex-1 h-10 rounded-xl text-sm flex items-center justify-center gap-2 ${btnClass} ${activeBtnClass} transition-all`}>
-                          <LinkIcon size={16} />
+                        <button type="button" onClick={() => openModal('bgUrl')} className={`h-10 rounded-lg text-sm flex items-center justify-center gap-2 ${btnClass} ${activeBtnClass} transition-all`}>
+                          <LinkIcon size={15} />
                           <span>网络链接</span>
+                        </button>
+                        <button type="button" onClick={() => openModal('bgLib')} className={`h-10 rounded-lg text-sm flex items-center justify-center gap-2 ${btnClass} ${activeBtnClass} transition-all`}>
+                          <ImageIcon size={15} />
+                          <span>模板库</span>
                         </button>
                         <button
                           type="button"
-                          onClick={onClearChatBackgroundImage}
-                          disabled={!appearanceSettings.chatBackgroundImage}
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                            appearanceSettings.chatBackgroundImage
-                              ? enabledDangerIconButtonClass
-                              : disabledIconButtonClass
-                          }`}
+                          onClick={() => setShowBgColorPicker((v) => !v)}
+                          className={`h-10 rounded-lg text-sm flex items-center justify-center gap-2 ${btnClass} ${activeBtnClass} transition-all ${showBgColorPicker ? 'text-rose-400' : ''}`}
                         >
-                          <Trash2 size={16} />
+                          <span className="w-4 h-4 rounded-sm border border-slate-400/50" style={{ backgroundColor: bgColorInput }} />
+                          <span>纯色背景</span>
                         </button>
-                        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.currentTarget.value = ''; if (f) void onUploadChatBackgroundImage(f); }} />
                       </div>
+                      {showBgColorPicker && (
+                        <div className={`rounded-lg p-3 mb-2 flex items-center gap-3 ${pressedClass}`}>
+                          <input
+                            type="color"
+                            value={bgColorInput}
+                            onChange={(e) => setBgColorInput(e.target.value)}
+                            className="w-10 h-10 rounded cursor-pointer border-0 bg-transparent p-0"
+                          />
+                          <span className="text-xs text-slate-400 flex-1">{bgColorInput}</span>
+                          <button
+                            type="button"
+                            onClick={() => { onSetChatBackgroundImageFromUrl('solid:' + bgColorInput); setShowBgColorPicker(false); }}
+                            className={`px-3 h-8 rounded-lg text-xs font-bold text-white bg-rose-400 hover:bg-rose-500 transition-all`}
+                          >
+                            应用
+                          </button>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={onClearChatBackgroundImage}
+                        disabled={!appearanceSettings.chatBackgroundImage}
+                        className={`w-full h-9 rounded-lg text-sm flex items-center justify-center gap-2 transition-all ${
+                          appearanceSettings.chatBackgroundImage
+                            ? enabledDangerIconButtonClass
+                            : disabledIconButtonClass
+                        }`}
+                      >
+                        <Trash2 size={14} />
+                        <span>清除背景</span>
+                      </button>
+                      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.currentTarget.value = ''; if (f) void onUploadChatBackgroundImage(f); }} />
                     </div>
 
                     <div className="w-full h-[1px] bg-slate-300/20 my-0" />
@@ -1464,7 +1542,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                                   <button
                                     type="button"
                                     onClick={() => requestArchiveDelete(a)}
-                                    className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${enabledDangerIconButtonClass}`}
+                                    className={`w-5 h-5 rounded-lg flex items-center justify-center transition-all ${enabledDangerIconButtonClass}`}
                                     title="删除会话存档"
                                   >
                                     <Trash2 size={12} />
@@ -1614,6 +1692,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
       </div>
       {renderSummaryModal()}
       {renderBgUrlModal()}
+      {renderBgLibModal()}
       {pendingArchiveDelete && (
         <div className={`fixed inset-0 z-[96] flex items-center justify-center p-6 ${archiveDeleteDialogClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
           <button
@@ -1621,7 +1700,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
             className="absolute inset-0 bg-black/45 backdrop-blur-sm"
             onClick={cancelArchiveDelete}
           />
-          <div className={`relative w-full max-w-sm rounded-2xl p-6 border shadow-2xl ${isDarkMode ? 'bg-[#2d3748] border-slate-600' : 'bg-[#e0e5ec] border-white/50'} ${archiveDeleteDialogClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
+          <div className={`relative w-full max-w-sm rounded-xl p-5 border ${isDarkMode ? 'bg-[#2d3748] border-slate-700' : 'bg-white border-slate-200'} ${archiveDeleteDialogClosing ? 'app-fade-exit' : 'app-fade-enter'}`}>
             <div className={`text-base font-bold mb-2 ${headingClass}`}>确认删除</div>
             <div className="text-sm text-slate-500 leading-relaxed">
               是否删除会话存档
@@ -1634,14 +1713,14 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
               <button
                 type="button"
                 onClick={cancelArchiveDelete}
-                className={`flex-1 h-10 rounded-full text-sm font-bold ${btnClass} ${activeBtnClass} transition-all`}
+                className={`flex-1 h-10 rounded-lg text-sm font-bold ${btnClass} ${activeBtnClass} transition-all`}
               >
                 取消
               </button>
               <button
                 type="button"
                 onClick={confirmArchiveDelete}
-                className="flex-1 h-10 rounded-full text-sm font-bold text-white bg-rose-400 shadow-lg hover:bg-rose-500 active:scale-95 transition-all"
+                className="flex-1 h-10 rounded-lg text-sm font-bold text-white bg-rose-400 hover:bg-rose-500 active:scale-95 transition-all"
               >
                 删除
               </button>
