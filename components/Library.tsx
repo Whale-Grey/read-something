@@ -1524,7 +1524,7 @@ const Library: React.FC<LibraryProps> = ({
                    onBlur={handleSaveSig}
                    onKeyDown={handleKeyDown}
                    className={`w-full min-w-0 px-2 py-1 rounded-lg outline-none resize-none ${inputClass}`}
-                   style={{ fontSize: '48px', fontWeight: 700, fontFamily: 'Garamond, Georgia, serif', letterSpacing: '0.02em', color: '#1A1A1A', lineHeight: 1.2 }}
+                   style={{ fontSize: '32px', fontWeight: 700, fontFamily: 'Garamond, Georgia, serif', letterSpacing: '0.02em', color: '#1A1A1A', lineHeight: 1.3 }}
                  />
                  <button onMouseDown={handleSaveSig} className="text-emerald-500 flex-shrink-0 mt-2"><Check size={16} /></button>
                </div>
@@ -1533,7 +1533,7 @@ const Library: React.FC<LibraryProps> = ({
                  onClick={() => setIsEditingSig(true)}
                  className="group flex items-start gap-2 cursor-pointer"
                >
-                 <p style={{ fontSize: '48px', fontWeight: 700, fontFamily: 'Garamond, Georgia, serif', letterSpacing: '0.02em', color: isDarkMode ? '#e2e8f0' : '#1A1A1A', lineHeight: 1.2 }}>
+                 <p style={{ fontSize: '32px', fontWeight: 700, fontFamily: 'Garamond, Georgia, serif', letterSpacing: '0.02em', color: isDarkMode ? '#e2e8f0' : '#1A1A1A', lineHeight: 1.3 }}>
                    {userSignature || <span className="opacity-40 italic" style={{ fontSize: '24px', fontFamily: 'sans-serif', fontWeight: 400 }}>点击编辑签名...</span>}
                  </p>
                  <Edit2 size={14} className="opacity-0 group-hover:opacity-40 text-slate-400 flex-shrink-0 mt-3" />
