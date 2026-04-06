@@ -87,6 +87,7 @@ interface ReaderMessagePanelProps {
   isMoreSettingsOpen: boolean;
   onCloseMoreSettings: () => void;
   ragApiConfigResolver?: RagApiConfigResolver;
+  onUnreadChange?: (hasUnread: boolean) => void;
 }
 
 interface ContextMenuState {
@@ -598,6 +599,7 @@ const ReaderMessagePanel = React.forwardRef<
   isMoreSettingsOpen,
   onCloseMoreSettings,
   ragApiConfigResolver,
+  onUnreadChange,
 }, ref) => {
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
   const [isAiFabOpening, setIsAiFabOpening] = useState(false);
@@ -2465,6 +2467,10 @@ const ReaderMessagePanel = React.forwardRef<
       setIsAiFabOpening(false);
     }
   }, [isAiPanelOpen]);
+
+  useEffect(() => {
+    onUnreadChange?.(unreadMessageCount > 0);
+  }, [unreadMessageCount, onUnreadChange]);
 
   useEffect(() => {
     if (!isAiPanelOpen) return;

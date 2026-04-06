@@ -8,6 +8,7 @@ import { Persona, Character, WorldBookEntry } from './components/settings/types'
 import { deleteImageByRef, migrateDataUrlToImageRef } from './utils/imageStorage';
 import { compactBookForState, deleteBookContent, getBookContent, migrateInlineBookContent, saveBookContent } from './utils/bookContentStorage';
 import { buildConversationKey, readConversationBucket, persistConversationBucket } from './utils/readerChatRuntime';
+import { saveAchievement } from './utils/studyHubStorage';
 import { BUILT_IN_TUTORIAL_BOOK_ID, BUILT_IN_TUTORIAL_VERSION, createBuiltInTutorialBook, migrateTutorialImages, isBuiltInBook, markTutorialUnread, clearTutorialUnread } from './utils/builtInTutorialBook';
 import { buildCharacterWorldBookSections, buildReadingContextSnapshot, runConversationGeneration } from './utils/readerAiEngine';
 import {
@@ -1517,6 +1518,30 @@ const App: React.FC = () => {
         });
         if (!isLoopActive()) return;
         if (result.status !== 'ok') return;
+
+        // 扫描成就
+        const PROACTIVE_ACHIEVEMENT_PATTERN = /【成就[：:]\s*(.*?)\s*[｜|]\s*图标[：:]\s*(.*?)\s*[｜|]\s*条件[：:]\s*(.*?)\s*(?:[｜|]\s*奖励[：:]\s*(.*?)\s*)?[｜|]\s*评价[：:]\s*(.*?)\s*】/;
+        for (const msg of result.aiMessages) {
+          const achMatch = msg.content.match(PROACTIVE_ACHIEVEMENT_PATTERN);
+          if (achMatch) {
+            const [, achName, achIcon, achCondition, , achComment] = achMatch;
+            saveAchievement({
+              id: `ach-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              name: achName.trim(),
+              icon: achIcon.trim(),
+              condition: achCondition.trim(),
+              reward: '',
+              comment: achComment.trim(),
+              bookId: targetBook.id,
+              bookTitle: targetBook.title || '',
+              characterId: activeCharacter.id,
+              characterName: activeCharacter.name || '',
+              characterAvatar: activeCharacter.avatar || '',
+              createdAt: Date.now(),
+            }).catch(() => undefined);
+            break;
+          }
+        }
 
         persistConversationBucket(
           conversationKey,

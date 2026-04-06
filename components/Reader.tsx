@@ -794,6 +794,7 @@ const Reader: React.FC<ReaderProps> = ({
   const [, setImageDimensionTick] = useState(0);
   const [settledChapterImageKeys, setSettledChapterImageKeys] = useState<Set<string>>(new Set());
   const [isLoadingMaskVisible, setIsLoadingMaskVisible] = useState(true);
+  const [hasUnreadChat, setHasUnreadChat] = useState(false);
 
   const readerRootRef = useRef<HTMLDivElement>(null);
   const messagePanelRef = useRef<{ toggle: () => void; isOpen: boolean } | null>(null);
@@ -3652,10 +3653,13 @@ const Reader: React.FC<ReaderProps> = ({
           </button>
           <button
             onClick={() => messagePanelRef.current?.toggle()}
-            className={`w-9 h-9 flex items-center justify-center transition-colors rounded-lg ${isDarkMode ? 'text-[#d6d4ce]/60 hover:text-[#d6d4ce]' : 'text-[#363233]/50 hover:text-[#363233]'}`}
+            className={`relative w-9 h-9 flex items-center justify-center transition-colors rounded-lg ${isDarkMode ? 'text-[#d6d4ce]/60 hover:text-[#d6d4ce]' : 'text-[#363233]/50 hover:text-[#363233]'}`}
             title="聊天"
           >
             <MessagesSquare size={18} />
+            {hasUnreadChat && (
+              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-current pointer-events-none" />
+            )}
           </button>
           <button
             onClick={() => setIsMoreSettingsOpen(true)}
@@ -4475,6 +4479,7 @@ const Reader: React.FC<ReaderProps> = ({
         isMoreSettingsOpen={isMoreSettingsOpen}
         onCloseMoreSettings={() => setIsMoreSettingsOpen(false)}
         ragApiConfigResolver={ragApiConfigResolver}
+        onUnreadChange={setHasUnreadChat}
       />
     </div>
   );
