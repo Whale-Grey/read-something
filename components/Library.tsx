@@ -1663,7 +1663,7 @@ const Library: React.FC<LibraryProps> = ({
               className={`${cardClass} app-card-press pt-4 pb-4 pr-4 pl-0 flex gap-3 cursor-pointer rounded-xl relative group`}
               style={{ border: 'none' }}
             >
-              <div className="flex-shrink-0 overflow-hidden app-card-press-media relative" style={{ width: '96px', height: '128px', borderRadius: '2px', border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}` }}>
+              <div className="flex-shrink-0 overflow-hidden app-card-press-media relative" style={{ width: '106px', height: '141px', borderRadius: '2px', border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}` }}>
                 {recentBook.coverUrl ? (
                     <ResolvedImage src={recentBook.coverUrl} alt="Cover" className="w-full h-full object-cover opacity-90" />
                 ) : (

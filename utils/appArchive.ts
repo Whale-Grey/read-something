@@ -1,5 +1,5 @@
 import { StoredBookContent, getAllBookContents, getBookContentStorageUsageBytes, replaceAllBookContents } from './bookContentStorage';
-import { Notebook, QuizSession, FavoriteQuote } from '../types';
+import { Notebook, QuizSession, FavoriteQuote, Achievement } from '../types';
 import {
   exportChatHistoryForArchive,
   getChatHistoryStorageUsageBytes,
@@ -273,6 +273,7 @@ export interface AppArchivePayload {
       notebooks: Notebook[];
       quizSessions: QuizSession[];
       favoriteQuotes: FavoriteQuote[];
+      achievements: Achievement[];
     };
   };
 }
@@ -296,6 +297,7 @@ export const createAppArchivePayload = async (): Promise<AppArchivePayload> => {
     notebooks: Array.isArray(studyHubRaw?.notebooks) ? studyHubRaw.notebooks : [],
     quizSessions: Array.isArray(studyHubRaw?.quizSessions) ? studyHubRaw.quizSessions : [],
     favoriteQuotes: Array.isArray(studyHubRaw?.favoriteQuotes) ? studyHubRaw.favoriteQuotes : [],
+    achievements: Array.isArray(studyHubRaw?.achievements) ? studyHubRaw.achievements : [],
   };
   return {
     meta: {
@@ -392,6 +394,7 @@ const normalizeArchivePayload = (raw: unknown): AppArchivePayload => {
     notebooks: (Array.isArray(studyHubSource.notebooks) ? studyHubSource.notebooks : []) as Notebook[],
     quizSessions: (Array.isArray(studyHubSource.quizSessions) ? studyHubSource.quizSessions : []) as QuizSession[],
     favoriteQuotes: (Array.isArray(studyHubSource.favoriteQuotes) ? studyHubSource.favoriteQuotes : []) as FavoriteQuote[],
+    achievements: (Array.isArray(studyHubSource.achievements) ? studyHubSource.achievements : []) as Achievement[],
   };
 
   return {
