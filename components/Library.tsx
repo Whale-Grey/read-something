@@ -1660,7 +1660,7 @@ const Library: React.FC<LibraryProps> = ({
             <h2 className="font-bold mb-4" style={{ fontSize: '24px', color: '#1A1A1A' }}>最近阅读</h2>
             <div
               onClick={() => onOpenBook(recentBook)}
-              className={`${cardClass} app-card-press pt-4 pb-4 pr-4 pl-0 flex gap-3 cursor-pointer rounded-xl relative group`}
+              className={`${cardClass} app-card-press pt-4 pb-4 pr-2 pl-0 flex gap-2 cursor-pointer rounded-xl relative group`}
               style={{ border: 'none' }}
             >
               <div className="flex-shrink-0 overflow-hidden app-card-press-media relative" style={{ width: '106px', height: '141px', borderRadius: '2px', border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}` }}>
