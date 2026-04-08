@@ -573,6 +573,35 @@ const collectImageRef = async (blob: Blob, context: ImportParseContext) => {
   return imageRef;
 };
 
+const dataUrlToBlob = (dataUrl: string): Blob | null => {
+  try {
+    const comma = dataUrl.indexOf(',');
+    if (comma < 0) return null;
+    const header = dataUrl.slice(0, comma);
+    const data = dataUrl.slice(comma + 1);
+    const mimeMatch = header.match(/data:([^;,]+)/);
+    const mimeType = mimeMatch?.[1] || 'image/png';
+    const isBase64 = header.includes(';base64');
+    if (isBase64) {
+      const binary = atob(data);
+      const array = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) array[i] = binary.charCodeAt(i);
+      return new Blob([array], { type: mimeType });
+    }
+    return new Blob([decodeURIComponent(data)], { type: mimeType });
+  } catch {
+    return null;
+  }
+};
+
+const zipFileCaseInsensitive = (zip: JSZip, path: string) => {
+  const direct = zip.file(path);
+  if (direct) return direct;
+  const lower = path.toLowerCase();
+  const match = Object.keys(zip.files).find((k) => k.toLowerCase() === lower);
+  return match ? zip.file(match) : null;
+};
+
 const materializeHtmlTokens = async (
   tokens: HtmlToken[],
   resolveImage: (token: HtmlTokenImage) => Promise<string | null>
@@ -661,9 +690,8 @@ const parseWordMetadata = async (zip: JSZip) => {
 const resolveDataImageToken = async (token: HtmlTokenImage, context: ImportParseContext) => {
   const src = token.src.trim();
   if (!src || !src.startsWith('data:image/')) return null;
-  const response = await fetch(src);
-  if (!response.ok) return null;
-  const blob = await response.blob();
+  const blob = dataUrlToBlob(src);
+  if (!blob || blob.size === 0) return null;
   return collectImageRef(blob, context);
 };
 
@@ -789,10 +817,10 @@ const parseEpubFile = async (file: File, context: ImportParseContext) => {
     (coverIdFromMeta ? manifest.get(coverIdFromMeta) : undefined);
   let coverUrl = '';
   if (coverItem) {
-    const coverEntry = zip.file(coverItem.fullPath);
+    const coverEntry = zipFileCaseInsensitive(zip, coverItem.fullPath);
     if (coverEntry) {
       const blob = await coverEntry.async('blob');
-      coverUrl = await collectImageRef(blob, context);
+      if (blob && blob.size > 0) coverUrl = await collectImageRef(blob, context);
     }
   }
 
@@ -805,16 +833,16 @@ const parseEpubFile = async (file: File, context: ImportParseContext) => {
     const src = token.src.trim();
     if (!src) return null;
     if (src.startsWith('data:image/')) {
-      const response = await fetch(src);
-      if (!response.ok) return null;
-      const blob = await response.blob();
+      const blob = dataUrlToBlob(src);
+      if (!blob || blob.size === 0) return null;
       return collectImageRef(blob, context);
     }
     if (/^[a-z]+:/i.test(src)) return null;
     const resolvedPath = resolveZipRelativePath(baseFilePath, src);
-    const imageEntry = zip.file(resolvedPath);
+    const imageEntry = zipFileCaseInsensitive(zip, resolvedPath);
     if (!imageEntry) return null;
     const blob = await imageEntry.async('blob');
+    if (!blob || blob.size === 0) return null;
     return collectImageRef(blob, context);
   };
 
@@ -1417,7 +1445,11 @@ const renderPdfPageToBlob = async (page: any, maxWidth: number) => {
   canvas.height = Math.max(1, Math.floor(drawViewport.height));
   const context = canvas.getContext('2d', { alpha: false });
   if (!context) return null;
-  await page.render({ canvasContext: context, viewport: drawViewport }).promise;
+  try {
+    await page.render({ canvasContext: context, viewport: drawViewport }).promise;
+  } catch {
+    return null;
+  }
   return canvasToBlob(canvas, 'image/jpeg', 0.82);
 };
 
