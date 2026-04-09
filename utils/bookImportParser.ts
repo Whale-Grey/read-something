@@ -2,7 +2,7 @@
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Chapter, ReaderContentBlock } from '../types';
-import { deleteImageByRef, saveImageBlob } from './imageStorage';
+import { deleteImageByRef, isImageRef, saveImageBlob } from './imageStorage';
 
 type SupportedImportFormat = 'txt' | 'word' | 'epub' | 'pdf' | 'mobi';
 
@@ -695,6 +695,21 @@ const resolveDataImageToken = async (token: HtmlTokenImage, context: ImportParse
   return collectImageRef(blob, context);
 };
 
+// Resolves image tokens for Word imports: handles pre-saved imageRefs (from mammoth's
+// convertImage callback) and data URL fallbacks.
+const resolveWordImageToken = async (token: HtmlTokenImage, context: ImportParseContext) => {
+  const src = token.src.trim();
+  if (!src) return null;
+  // Pre-resolved imageRef returned by mammoth's convertImage callback
+  if (isImageRef(src)) return src as string;
+  if ((src as string).startsWith('data:image/')) {
+    const blob = dataUrlToBlob(src);
+    if (!blob || blob.size === 0) return null;
+    return collectImageRef(blob, context);
+  }
+  return null;
+};
+
 const parseWordFile = async (file: File, context: ImportParseContext) => {
   const arrayBuffer = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(arrayBuffer);
@@ -708,7 +723,24 @@ const parseWordFile = async (file: File, context: ImportParseContext) => {
     coverUrl = await collectImageRef(blob, context);
   }
 
-  const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
+  const htmlResult = await mammoth.convertToHtml(
+    { arrayBuffer },
+    {
+      convertImage: mammoth.images.imgElement(async (image) => {
+        try {
+          const contentType = image.contentType || 'image/png';
+          if (!contentType.startsWith('image/')) return { src: '' };
+          const buffer = await image.readAsArrayBuffer();
+          const blob = new Blob([buffer], { type: contentType });
+          if (!blob || blob.size === 0) return { src: '' };
+          const imageRef = await collectImageRef(blob, context);
+          return { src: imageRef };
+        } catch {
+          return { src: '' };
+        }
+      }),
+    }
+  );
   const htmlDoc = new DOMParser().parseFromString(htmlResult.value || '', 'text/html');
   const rawTextResult = await mammoth.extractRawText({ arrayBuffer });
   const fallbackText = normalizeTextBlock(rawTextResult.value || '');
@@ -719,7 +751,7 @@ const parseWordFile = async (file: File, context: ImportParseContext) => {
   let chapterTokens: HtmlToken[] = [];
 
   const flushChapter = async () => {
-    const blocks = await materializeHtmlTokens(chapterTokens, (token) => resolveDataImageToken(token, context));
+    const blocks = await materializeHtmlTokens(chapterTokens, (token) => resolveWordImageToken(token, context));
     chapterTokens = [];
     if (blocks.length === 0) return;
     const chapter = buildChapterFromBlocks(chapterTitle || `第 ${chapterIndex} 章`, blocks);
