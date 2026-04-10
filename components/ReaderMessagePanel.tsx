@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { parse as parseTwemoji } from '@twemoji/parser';
 import {
   Check,
   MessagesSquare,
@@ -262,10 +263,73 @@ const AchievementCardInline: React.FC<{
   </div>
 );
 
+/* ========== Emoji 弹出系统 ========== */
+const MAX_BUBBLE_EMOJIS = 3;
+
+/** 从文本中提取最多 MAX_BUBBLE_EMOJIS 个不重复 emoji 的 SVG URL */
+const extractEmojiUrls = (text: string): string[] => {
+  const entities = parseTwemoji(text, { assetType: 'svg' });
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const entity of entities) {
+    if (!seen.has(entity.text) && urls.length < MAX_BUBBLE_EMOJIS) {
+      seen.add(entity.text);
+      urls.push(entity.url);
+    }
+  }
+  return urls;
+};
+
+/** 从文本中移除所有 emoji，清理多余空白 */
+const removeTextEmojis = (text: string): string => {
+  const entities = parseTwemoji(text);
+  if (entities.length === 0) return text;
+  let result = text;
+  for (let i = entities.length - 1; i >= 0; i -= 1) {
+    const [start, end] = entities[i].indices;
+    result = result.slice(0, start) + result.slice(end);
+  }
+  return result.replace(/\s{2,}/g, ' ').trim();
+};
+
+/** 绝对定位在气泡右侧的 emoji 弹出层（气泡需 position: relative） */
+const BubbleEmojiFloat: React.FC<{ emojiUrls: string[] }> = ({ emojiUrls }) => {
+  if (emojiUrls.length === 0) return null;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        right: '-16px',
+        bottom: '8px',
+        display: 'flex',
+        flexDirection: 'column-reverse',
+        gap: '2px',
+        pointerEvents: 'none',
+        zIndex: 10,
+      }}
+    >
+      {emojiUrls.map((url, i) => (
+        <img
+          key={url}
+          src={url}
+          alt=""
+          style={{
+            width: 28,
+            height: 28,
+            display: 'block',
+            animation: `emoji-bubble-pop 420ms ${220 + i * 90}ms cubic-bezier(0.34, 1.56, 0.64, 1) both`,
+          }}
+        />
+      ))}
+    </div>
+  );
+};
+/* ========== Emoji 弹出系统 结束 ========== */
+
 const renderBubbleContent = (content: string): React.ReactNode => {
   const stripped = content.replace(/【旁批[：:][^】]*】/g, '').trim();
   const match = stripped.match(ACHIEVEMENT_PATTERN);
-  if (!match) return stripped;
+  if (!match) return removeTextEmojis(stripped);
 
   const [fullMatch, achievementName, icon, condition, , comment] = match;
   const beforeText = stripped.slice(0, match.index);
@@ -273,14 +337,14 @@ const renderBubbleContent = (content: string): React.ReactNode => {
 
   return (
     <>
-      {beforeText && <span>{beforeText}</span>}
+      {beforeText && <span>{removeTextEmojis(beforeText)}</span>}
       <AchievementCardInline
         name={achievementName}
         icon={icon}
         condition={condition}
         comment={comment}
       />
-      {afterText && <span>{afterText}</span>}
+      {afterText && <span>{removeTextEmojis(afterText)}</span>}
     </>
   );
 };
@@ -3424,7 +3488,10 @@ const ReaderMessagePanel = React.forwardRef<
               const afterAchText = achMatch ? message.content.slice((achMatch.index || 0) + achMatch[0].length).trim() : '';
 
               // 渲染普通气泡内容的辅助函数
-              const renderNormalBubble = (content: string, key?: string) => (
+              const renderNormalBubble = (content: string, key?: string) => {
+                const cleanContent = removeTextEmojis(content);
+                const bubbleEmojiUrls = extractEmojiUrls(content);
+                return (
                 <div key={key} className={`flex ${isUser ? 'justify-end' : 'justify-start'} ${isDeleteMode ? 'cursor-pointer' : ''}`}
                   onClick={() => handleBubbleClick(message.id)}>
                   <div className={`max-w-[88%] flex items-start gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -3435,7 +3502,7 @@ const ReaderMessagePanel = React.forwardRef<
                     )}
                     <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
                       <div
-                        className={`rm-bubble ${isUser ? 'rm-bubble-user' : 'rm-bubble-ai'} px-5 py-3 text-sm leading-relaxed transition-colors border-none ${
+                        className={`rm-bubble ${isUser ? 'rm-bubble-user' : 'rm-bubble-ai'} relative px-5 py-3 text-sm leading-relaxed transition-colors border-none ${
                           isUser
                             ? isDarkMode
                               ? 'bg-[rgb(var(--theme-500)_/_1)] text-white rounded-2xl rounded-br'
@@ -3451,12 +3518,14 @@ const ReaderMessagePanel = React.forwardRef<
                         onPointerCancel={handleBubblePointerEnd}
                         onContextMenu={(event) => handleBubbleContextMenu(event, message.id)}
                       >
-                        <div className="break-words">{content}</div>
+                        <div className="break-words">{cleanContent}</div>
+                        <BubbleEmojiFloat emojiUrls={bubbleEmojiUrls} />
                       </div>
                     </div>
                   </div>
                 </div>
-              );
+                );
+              };
 
               // 成就独立渲染（不用气泡框）
               const renderAchievementStandalone = (key?: string) => {
@@ -3535,7 +3604,7 @@ const ReaderMessagePanel = React.forwardRef<
                       )}
 
                       <div
-                        className={`rm-bubble ${isUser ? 'rm-bubble-user' : 'rm-bubble-ai'} px-5 py-3 text-sm leading-relaxed transition-colors border-none ${
+                        className={`rm-bubble ${isUser ? 'rm-bubble-user' : 'rm-bubble-ai'} relative px-5 py-3 text-sm leading-relaxed transition-colors border-none ${
                           isUser
                             ? isDarkMode
                               ? 'bg-[rgb(var(--theme-500)_/_1)] text-white rounded-2xl rounded-br'
@@ -3570,6 +3639,7 @@ const ReaderMessagePanel = React.forwardRef<
                           </div>
                         )}
                         <div className="break-words">{renderBubbleContent(message.content)}</div>
+                        <BubbleEmojiFloat emojiUrls={extractEmojiUrls(message.content.replace(/【旁批[：:][^】]*】/g, '').replace(ACHIEVEMENT_PATTERN, ''))} />
                       </div>
                     </div>
                   </div>
