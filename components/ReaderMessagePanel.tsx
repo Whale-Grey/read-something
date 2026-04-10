@@ -292,6 +292,14 @@ const removeTextEmojis = (text: string): string => {
   return result.replace(/\s{2,}/g, ' ').trim();
 };
 
+/** 从 URL 字符串派生一个稳定的小角度倾斜（-14° ~ +14°），奇偶分布左右 */
+const getEmojiTilt = (url: string, index: number): number => {
+  const hash = url.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  // 幅度 4–14 度，符号由 hash 奇偶决定
+  const magnitude = 4 + (hash % 11);
+  return (hash + index) % 2 === 0 ? magnitude : -magnitude;
+};
+
 /** 绝对定位在气泡右侧的 emoji 弹出层（气泡需 position: relative） */
 const BubbleEmojiFloat: React.FC<{ emojiUrls: string[] }> = ({ emojiUrls }) => {
   if (emojiUrls.length === 0) return null;
@@ -300,26 +308,31 @@ const BubbleEmojiFloat: React.FC<{ emojiUrls: string[] }> = ({ emojiUrls }) => {
       style={{
         position: 'absolute',
         right: '-19px',
-        bottom: '8px',
+        top: '50%',
+        transform: 'translateY(-50%)',
         display: 'flex',
-        flexDirection: 'column-reverse',
-        gap: '2px',
+        flexDirection: 'column',
+        gap: '4px',
         pointerEvents: 'none',
         zIndex: 10,
       }}
     >
       {emojiUrls.map((url, i) => (
-        <img
+        <div
           key={url}
-          src={url}
-          alt=""
-          style={{
-            width: 38,
-            height: 38,
-            display: 'block',
-            animation: `emoji-bubble-pop 420ms ${220 + i * 90}ms cubic-bezier(0.34, 1.56, 0.64, 1) both`,
-          }}
-        />
+          style={{ transform: `rotate(${getEmojiTilt(url, i)}deg)`, transformOrigin: 'center center' }}
+        >
+          <img
+            src={url}
+            alt=""
+            style={{
+              width: 38,
+              height: 38,
+              display: 'block',
+              animation: `emoji-bubble-pop 420ms ${220 + i * 90}ms cubic-bezier(0.34, 1.56, 0.64, 1) both`,
+            }}
+          />
+        </div>
       ))}
     </div>
   );
