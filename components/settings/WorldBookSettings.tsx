@@ -4,7 +4,8 @@ import {
   Folder,
   Edit2,
   Trash2,
-  ChevronRight,
+  Globe,
+  User,
   Plus,
   Check,
   GripVertical,
@@ -19,6 +20,8 @@ interface WorldBookSettingsProps {
   setWbCategories: React.Dispatch<React.SetStateAction<string[]>>;
   worldBookEntries: WorldBookEntry[];
   setWorldBookEntries: React.Dispatch<React.SetStateAction<WorldBookEntry[]>>;
+  globalWbCategories: string[];
+  onToggleCategoryGlobal: (category: string) => void;
   theme: ThemeClasses;
   onBack: () => void;
 }
@@ -34,11 +37,14 @@ const WorldBookSettings: React.FC<WorldBookSettingsProps> = ({
   setWbCategories,
   worldBookEntries,
   setWorldBookEntries,
+  globalWbCategories,
+  onToggleCategoryGlobal,
   theme,
   onBack,
 }) => {
   const [viewingCategory, setViewingCategory] = useState<string | null>(null);
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
+  const [tooltipCategory, setTooltipCategory] = useState<string | null>(null);
   const [tempCategoryName, setTempCategoryName] = useState('');
   const [editingWorldBookId, setEditingWorldBookId] = useState<string | null>(null);
   const [innerAnimationClass, setInnerAnimationClass] = useState(theme.animationClass || 'app-view-enter-left');
@@ -692,12 +698,33 @@ const WorldBookSettings: React.FC<WorldBookSettingsProps> = ({
                   >
                     <Trash2 size={14} />
                   </button>
-                  <button
-                    onClick={() => switchCategoryView(category)}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-rose-400 ${btnClass}`}
-                  >
-                    <ChevronRight size={16} />
-                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleCategoryGlobal(category);
+                        setTooltipCategory(category);
+                        window.setTimeout(() => setTooltipCategory(null), 2000);
+                      }}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                        globalWbCategories.includes(category)
+                          ? isDarkMode
+                            ? 'text-sky-400 bg-sky-400/10'
+                            : 'text-sky-500 bg-sky-100'
+                          : `text-slate-400 hover:text-slate-600 ${btnClass}`
+                      }`}
+                      title={globalWbCategories.includes(category) ? '全局生效中，点击切换为角色模式' : '角色模式，点击切换为全局模式'}
+                    >
+                      {globalWbCategories.includes(category) ? <Globe size={15} /> : <User size={15} />}
+                    </button>
+                    {tooltipCategory === category && (
+                      <div className={`absolute right-0 top-10 z-50 px-2.5 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap shadow-lg pointer-events-none ${
+                        isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-white text-slate-600 border border-slate-200'
+                      }`}>
+                        {globalWbCategories.includes(category) ? '全局：全局生效' : '角色：须绑定角色生效'}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

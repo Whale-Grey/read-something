@@ -739,7 +739,7 @@ const App: React.FC = () => {
       disabled: true,
       content: `# 角色用语规范
 对话情境：与角色共同阅读一本书。角色是共读者而非引导者，身份平等。
-用语风格：口语化。可以文本中穿插一些贴切emoji。允许停顿、迟疑、困惑甚至自我否定。
+用语风格：口语化。对话中可以穿插1~2个贴切emoji。允许停顿、迟疑、困惑甚至自我否定。
 内容指导：可以是角色个人对于当前阅读内容的思考，或是引经据典，通过提问发散思维。可以夹杂角色个人喜恶。对话内容应该聚焦当前的阅读内容，禁止过度引用角色设定信息。
 示例：
   嗯…不、不对。
@@ -775,6 +775,13 @@ const App: React.FC = () => {
       if (!cats.includes('共读规范')) return ['共读规范', ...cats];
       return cats;
     } catch { return ['共读规范', '未分类']; }
+  });
+
+  const [globalWbCategories, setGlobalWbCategories] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('app_wb_global_categories');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
   });
 
   // Library User Profile State
@@ -1136,6 +1143,7 @@ const App: React.FC = () => {
   useEffect(() => { safeSetStorageItem('app_characters', JSON.stringify(characters)); }, [characters]);
   useEffect(() => { safeSetStorageItem('app_worldbook', JSON.stringify(worldBookEntries)); }, [worldBookEntries]);
   useEffect(() => { safeSetStorageItem('app_wb_categories', JSON.stringify(wbCategories)); }, [wbCategories]);
+  useEffect(() => { safeSetStorageItem('app_wb_global_categories', JSON.stringify(globalWbCategories)); }, [globalWbCategories]);
   
   // New persistence
   useEffect(() => { safeSetStorageItem('app_user_signature', userSignature); }, [userSignature]);
@@ -1537,9 +1545,10 @@ const App: React.FC = () => {
           characterRealName: activeCharacter.name?.trim() || 'Char',
           characterNickname: activeCharacter.nickname?.trim() || activeCharacter.name?.trim() || 'Char',
           characterDescription: activeCharacter.description?.trim() || '（暂无角色人设）',
-          characterWorldBookEntries: buildCharacterWorldBookSections(activeCharacter, worldBookEntries),
+          characterWorldBookEntries: buildCharacterWorldBookSections(activeCharacter, worldBookEntries, globalWbCategories),
           activeBookId: targetBook.id,
           activeBookTitle: targetBook.title || '未选择书籍',
+          activeBookAuthor: targetBook.author || '',
           chatHistorySummary: bucket.chatHistorySummary || '',
           readingPrefixSummaryByBookId: bucket.readingPrefixSummaryByBookId || {},
           readingContext,
@@ -2191,6 +2200,12 @@ const App: React.FC = () => {
     showNotification('书本已删除');
   };
 
+  const handleToggleCategoryGlobal = (category: string) => {
+    setGlobalWbCategories((prev: string[]) =>
+      prev.includes(category) ? prev.filter((c: string) => c !== category) : [...prev, category]
+    );
+  };
+
   const manualSafeAreaTop = Math.max(0, appSettings.safeAreaTop || 0);
   const manualSafeAreaBottom = Math.max(0, appSettings.safeAreaBottom || 0);
   const resolvedSafeAreaTop = manualSafeAreaTop;
@@ -2297,6 +2312,7 @@ const App: React.FC = () => {
             activeCharacterId={activeCharacterId}
             onSelectCharacter={setActiveCharacterId}
             worldBookEntries={worldBookEntries}
+            globalWbCategories={globalWbCategories}
             ragApiConfigResolver={resolveRagApiConfig}
             pendingHighlightJump={pendingHighlightJump}
             onClearPendingHighlightJump={() => setPendingHighlightJump(null)}
@@ -2428,6 +2444,8 @@ const App: React.FC = () => {
             setWorldBookEntries={setWorldBookEntries}
             wbCategories={wbCategories}
             setWbCategories={setWbCategories}
+            globalWbCategories={globalWbCategories}
+            onToggleCategoryGlobal={handleToggleCategoryGlobal}
 
             // RAG Presets
             ragPresets={ragPresets}

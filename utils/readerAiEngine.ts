@@ -69,6 +69,7 @@ interface RunConversationGenerationParams {
   characterWorldBookEntries: CharacterWorldBookSections;
   activeBookId: string | null;
   activeBookTitle: string;
+  activeBookAuthor?: string;
   chatHistorySummary: string;
   readingPrefixSummaryByBookId: Record<string, string>;
   readingContext: ReadingContextSnapshot;
@@ -747,6 +748,7 @@ interface BuildAiPromptParams {
   characterNickname: string;
   characterDescription: string;
   activeBookTitle: string;
+  activeBookAuthor?: string;
   activeBookSummary: string;
   chatHistorySummary: string;
   memoryBubbleCount: number;
@@ -775,6 +777,7 @@ interface EstimateConversationPromptTokensParams {
   characterNickname: string;
   characterDescription: string;
   activeBookTitle: string;
+  activeBookAuthor?: string;
   activeBookSummary: string;
   chatHistorySummary: string;
   memoryBubbleCount?: number;
@@ -808,6 +811,7 @@ const buildAiPromptLineItems = (params: BuildAiPromptParams): PromptLineItem[] =
     characterRealName,
     characterDescription,
     activeBookTitle,
+    activeBookAuthor,
     activeBookSummary,
     chatHistorySummary,
     memoryBubbleCount,
@@ -869,7 +873,7 @@ const buildAiPromptLineItems = (params: BuildAiPromptParams): PromptLineItem[] =
   pushPromptLine(lines, 'otherInstructions', '</user_profile>');
   pushPromptLine(lines, 'otherInstructions', '');
   pushPromptLine(lines, 'otherInstructions', '<book_context>');
-  pushPromptLine(lines, 'otherInstructions', `【你们在读的书】${activeBookTitle || '还没选好要读什么'}`);
+  pushPromptLine(lines, 'otherInstructions', `【你们在读的书】${activeBookTitle || '还没选好要读什么'}${activeBookAuthor ? `　作者：${activeBookAuthor}` : ''}`);
   pushPromptLine(lines, 'bookSummary', `【书籍前文梗概】${safeActiveBookSummary || '（还没整理出来）'}`);
   pushPromptLine(lines, 'otherInstructions', '');
   pushPromptLine(lines, 'otherInstructions', '【现在读到的书籍内容】');
@@ -994,6 +998,7 @@ export const estimateConversationPromptTokens = (
     characterNickname: params.characterNickname,
     characterDescription: params.characterDescription,
     activeBookTitle: params.activeBookTitle,
+    activeBookAuthor: params.activeBookAuthor,
     activeBookSummary: params.activeBookSummary,
     chatHistorySummary: params.chatHistorySummary,
     memoryBubbleCount: normalizedMemoryBubbleCount,
@@ -1027,18 +1032,22 @@ export const estimateConversationPromptTokens = (
 
 export const buildCharacterWorldBookSections = (
   activeCharacter: Character | null,
-  worldBookEntries: WorldBookEntry[]
+  worldBookEntries: WorldBookEntry[],
+  globalCategories?: string[]
 ): CharacterWorldBookSections => {
+  const globalSet = new Set((globalCategories || []).map((c) => c.trim()).filter(Boolean));
   const boundCategories = new Set(
     (activeCharacter?.boundWorldBookCategories || []).map((category) => category.trim()).filter(Boolean)
   );
-  if (boundCategories.size === 0) {
+  if (boundCategories.size === 0 && globalSet.size === 0) {
     return {
       before: [],
       after: [],
     };
   }
-  const scopedEntries = worldBookEntries.filter((entry) => boundCategories.has(entry.category) && !entry.disabled);
+  const scopedEntries = worldBookEntries.filter(
+    (entry) => (boundCategories.has(entry.category) || globalSet.has(entry.category)) && !entry.disabled
+  );
   return {
     before: sortWorldBookEntriesByCode(scopedEntries.filter((entry) => entry.insertPosition === 'BEFORE')),
     after: sortWorldBookEntriesByCode(scopedEntries.filter((entry) => entry.insertPosition === 'AFTER')),
@@ -1252,6 +1261,7 @@ export const runConversationGeneration = async (
     characterWorldBookEntries,
     activeBookId,
     activeBookTitle,
+    activeBookAuthor,
     chatHistorySummary,
     readingPrefixSummaryByBookId,
     readingContext,
@@ -1352,6 +1362,7 @@ export const runConversationGeneration = async (
       characterNickname,
       characterDescription,
       activeBookTitle,
+      activeBookAuthor,
       activeBookSummary,
       chatHistorySummary,
       memoryBubbleCount: normalizedMemoryBubbleCount,

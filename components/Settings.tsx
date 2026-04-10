@@ -53,6 +53,8 @@ interface SettingsProps {
   setWorldBookEntries: React.Dispatch<React.SetStateAction<WorldBookEntry[]>>;
   wbCategories: string[];
   setWbCategories: React.Dispatch<React.SetStateAction<string[]>>;
+  globalWbCategories: string[];
+  onToggleCategoryGlobal: (category: string) => void;
   ragPresets: RagPreset[];
   setRagPresets: React.Dispatch<React.SetStateAction<RagPreset[]>>;
   activeRagPresetId: string;
@@ -120,6 +122,8 @@ const Settings: React.FC<SettingsProps> = ({
   setWorldBookEntries,
   wbCategories,
   setWbCategories,
+  globalWbCategories,
+  onToggleCategoryGlobal,
   ragPresets,
   setRagPresets,
   activeRagPresetId,
@@ -552,11 +556,13 @@ const Settings: React.FC<SettingsProps> = ({
 
   if (currentView === 'WORLDBOOK') {
     return (
-      <WorldBookSettings 
+      <WorldBookSettings
         wbCategories={wbCategories}
         setWbCategories={setWbCategories}
         worldBookEntries={worldBookEntries}
         setWorldBookEntries={setWorldBookEntries}
+        globalWbCategories={globalWbCategories}
+        onToggleCategoryGlobal={onToggleCategoryGlobal}
         theme={theme}
         onBack={() => goBack()}
       />

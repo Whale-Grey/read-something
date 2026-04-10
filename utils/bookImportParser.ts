@@ -723,22 +723,11 @@ const parseWordFile = async (file: File, context: ImportParseContext) => {
     coverUrl = await collectImageRef(blob, context);
   }
 
+  // Word 内嵌图片不保存：DOCX 图片通常无法正常渲染且占用大量空间，直接跳过。
   const htmlResult = await mammoth.convertToHtml(
     { arrayBuffer },
     {
-      convertImage: mammoth.images.imgElement(async (image) => {
-        try {
-          const contentType = image.contentType || 'image/png';
-          if (!contentType.startsWith('image/')) return { src: '' };
-          const buffer = await image.readAsArrayBuffer();
-          const blob = new Blob([buffer], { type: contentType });
-          if (!blob || blob.size === 0) return { src: '' };
-          const imageRef = await collectImageRef(blob, context);
-          return { src: imageRef };
-        } catch {
-          return { src: '' };
-        }
-      }),
+      convertImage: mammoth.images.imgElement(async (_image) => ({ src: '' })),
     }
   );
   const htmlDoc = new DOMParser().parseFromString(htmlResult.value || '', 'text/html');

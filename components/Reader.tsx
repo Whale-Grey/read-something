@@ -65,6 +65,7 @@ interface ReaderProps {
   activeCharacterId: string | null;
   onSelectCharacter: (characterId: string | null) => void;
   worldBookEntries: WorldBookEntry[];
+  globalWbCategories?: string[];
   safeAreaTop?: number;
   safeAreaBottom?: number;
   ragIndexingState?: {
@@ -736,6 +737,7 @@ const Reader: React.FC<ReaderProps> = ({
   activeCharacterId,
   onSelectCharacter,
   worldBookEntries,
+  globalWbCategories = [],
   safeAreaTop = 0,
   safeAreaBottom = 0,
   ragIndexingState = null,
@@ -4468,6 +4470,7 @@ const Reader: React.FC<ReaderProps> = ({
         activeCharacterId={activeCharacterId}
         onSelectCharacter={onSelectCharacter}
         worldBookEntries={worldBookEntries}
+        globalWbCategories={globalWbCategories}
         chapters={chapters}
         bookText={bookText}
         activeChapterRenderedText={readerTextForHighlighting}

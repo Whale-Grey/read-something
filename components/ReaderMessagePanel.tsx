@@ -77,6 +77,7 @@ interface ReaderMessagePanelProps {
   activeCharacterId: string | null;
   onSelectCharacter: (characterId: string | null) => void;
   worldBookEntries: WorldBookEntry[];
+  globalWbCategories?: string[];
   chapters: Chapter[];
   bookText: string;
   activeChapterRenderedText?: string;
@@ -665,6 +666,7 @@ const ReaderMessagePanel = React.forwardRef<
   activeCharacterId,
   onSelectCharacter,
   worldBookEntries,
+  globalWbCategories = [],
   chapters,
   bookText,
   activeChapterRenderedText,
@@ -798,6 +800,7 @@ const ReaderMessagePanel = React.forwardRef<
   const characterNickname = activeCharacter?.nickname?.trim() || characterRealName;
   const characterDescription = activeCharacter?.description?.trim() || '（暂无角色人设）';
   const activeBookTitle = activeBook?.title || '未选择书籍';
+  const activeBookAuthor = activeBook?.author || '';
   const activeBookSummary = activeBook?.id ? readingPrefixSummaryByBookId[activeBook.id] || '' : '';
 
   const conversationKey = useMemo(
@@ -811,8 +814,8 @@ const ReaderMessagePanel = React.forwardRef<
   const lastSyncedConversationKeyRef = useRef<string>(conversationKey);
 
   const characterWorldBookEntries = useMemo(
-    () => buildCharacterWorldBookSections(activeCharacter, worldBookEntries),
-    [activeCharacter, worldBookEntries]
+    () => buildCharacterWorldBookSections(activeCharacter, worldBookEntries, globalWbCategories),
+    [activeCharacter, worldBookEntries, globalWbCategories]
   );
 
   const canSendToAi = useMemo(() => {
@@ -2874,6 +2877,7 @@ const ReaderMessagePanel = React.forwardRef<
       characterNickname,
       characterDescription,
       activeBookTitle,
+      activeBookAuthor,
       activeBookSummary,
       chatHistorySummary,
       memoryBubbleCount: readerMoreFeature.memoryBubbleCount,
@@ -2895,6 +2899,7 @@ const ReaderMessagePanel = React.forwardRef<
     characterNickname,
     characterDescription,
     activeBookTitle,
+    activeBookAuthor,
     activeBookSummary,
     chatHistorySummary,
     readerMoreFeature.memoryBubbleCount,
@@ -3020,6 +3025,7 @@ const ReaderMessagePanel = React.forwardRef<
         characterWorldBookEntries,
         activeBookId: activeBook?.id || null,
         activeBookTitle,
+        activeBookAuthor,
         chatHistorySummary,
         readingPrefixSummaryByBookId,
         readingContext,
