@@ -9,7 +9,7 @@ import { deleteImageByRef, migrateDataUrlToImageRef } from './utils/imageStorage
 import { compactBookForState, deleteBookContent, getBookContent, migrateInlineBookContent, saveBookContent } from './utils/bookContentStorage';
 import { buildConversationKey, readConversationBucket, persistConversationBucket } from './utils/readerChatRuntime';
 import { saveAchievement } from './utils/studyHubStorage';
-import { BUILT_IN_TUTORIAL_BOOK_ID, BUILT_IN_TUTORIAL_VERSION, createBuiltInTutorialBook, migrateTutorialImages, isBuiltInBook, markTutorialUnread, clearTutorialUnread } from './utils/builtInTutorialBook';
+import { BUILT_IN_TUTORIAL_BOOK_ID, BUILT_IN_TUTORIAL_VERSION, createBuiltInTutorialBook, migrateTutorialImages, isBuiltInBook, markTutorialUnread, clearTutorialUnread, isTutorialDeleted, markTutorialDeleted } from './utils/builtInTutorialBook';
 import { buildCharacterWorldBookSections, buildReadingContextSnapshot, runConversationGeneration } from './utils/readerAiEngine';
 import {
   DEFAULT_NEUMORPHISM_BUBBLE_CSS_PRESET_ID,
@@ -657,7 +657,7 @@ const App: React.FC = () => {
     const versionKey = '__built_in_tutorial_version__';
     const storedVersion = (() => { try { return Number(localStorage.getItem(versionKey)) || 0; } catch { return 0; } })();
     const tutorialIdx = initial.findIndex(b => b.id === BUILT_IN_TUTORIAL_BOOK_ID);
-    if (tutorialIdx === -1 || storedVersion < BUILT_IN_TUTORIAL_VERSION) {
+    if (!isTutorialDeleted() && (tutorialIdx === -1 || storedVersion < BUILT_IN_TUTORIAL_VERSION)) {
       const tutorial = createBuiltInTutorialBook();
       // 先用原始章节（含 data-URL）同步保存以确保书籍立即可用，
       // 再异步将图片迁移为 idb:// Blob 引用并重新保存。
@@ -727,19 +727,54 @@ const App: React.FC = () => {
     } catch { return []; }
   });
 
-  // World Book - Init empty if not found
+  // World Book - Init empty if not found; inject built-in entries once by stable ID
   const [worldBookEntries, setWorldBookEntries] = useState<WorldBookEntry[]>(() => {
+    const BUILTIN_WB_STYLE_ID = '__builtin_wb_coreading_style__';
+    const BUILTIN_WB_ACHIEVE_ID = '__builtin_wb_achievement__';
+    const builtinStyleEntry: WorldBookEntry = {
+      id: BUILTIN_WB_STYLE_ID,
+      title: '共读用语规范(可自改)',
+      category: '共读规范',
+      insertPosition: 'BEFORE',
+      disabled: true,
+      content: `# 角色用语规范
+对话情境：与角色共同阅读一本书。角色是共读者而非引导者，身份平等。
+用语风格：口语化。可以文本中穿插一些贴切emoji。允许停顿、迟疑、困惑甚至自我否定。
+内容指导：可以是角色个人对于当前阅读内容的思考，或是引经据典，通过提问发散思维。可以夹杂角色个人喜恶。对话内容应该聚焦当前的阅读内容，禁止过度引用角色设定信息。
+示例：
+  嗯…不、不对。
+  我在《xxxxx》里读到过类似的说法，据说这是当地一种特殊的习俗。
+  我不喜欢这个说法…`,
+    };
+    const builtinAchieveEntry: WorldBookEntry = {
+      id: BUILTIN_WB_ACHIEVE_ID,
+      title: '成就规范(可自改)',
+      category: '共读规范',
+      insertPosition: 'BEFORE',
+      disabled: true,
+      content: `# 成就印章
+成就印章是<char>做着好玩给<user>画的贴纸，只在发生深度交谈时使用，使用口语化的风格用语。`,
+    };
     try {
       const saved = localStorage.getItem('app_worldbook');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
+      const entries: WorldBookEntry[] = saved ? JSON.parse(saved) : [];
+      const hasStyle = entries.some(e => e.id === BUILTIN_WB_STYLE_ID);
+      const hasAchieve = entries.some(e => e.id === BUILTIN_WB_ACHIEVE_ID);
+      if (!hasStyle || !hasAchieve) {
+        const toAdd = [...(!hasStyle ? [builtinStyleEntry] : []), ...(!hasAchieve ? [builtinAchieveEntry] : [])];
+        return [...toAdd, ...entries];
+      }
+      return entries;
+    } catch { return [builtinStyleEntry, builtinAchieveEntry]; }
   });
 
   const [wbCategories, setWbCategories] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('app_wb_categories');
-      return saved ? JSON.parse(saved) : ['未分类'];
-    } catch { return ['未分类']; }
+      const cats: string[] = saved ? JSON.parse(saved) : ['未分类'];
+      if (!cats.includes('共读规范')) return ['共读规范', ...cats];
+      return cats;
+    } catch { return ['共读规范', '未分类']; }
   });
 
   // Library User Profile State
@@ -2117,7 +2152,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteBook = async (bookId: string) => {
-    if (isBuiltInBook(bookId)) return;
+    if (isBuiltInBook(bookId)) markTutorialDeleted();
     const targetBook = books.find(b => b.id === bookId);
     const storedContent = await getBookContent(bookId).catch(() => null);
     const imageRefs = new Set<string>();

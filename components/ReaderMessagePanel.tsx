@@ -299,7 +299,7 @@ const BubbleEmojiFloat: React.FC<{ emojiUrls: string[] }> = ({ emojiUrls }) => {
     <div
       style={{
         position: 'absolute',
-        right: '-16px',
+        right: '-19px',
         bottom: '8px',
         display: 'flex',
         flexDirection: 'column-reverse',
@@ -314,8 +314,8 @@ const BubbleEmojiFloat: React.FC<{ emojiUrls: string[] }> = ({ emojiUrls }) => {
           src={url}
           alt=""
           style={{
-            width: 28,
-            height: 28,
+            width: 38,
+            height: 38,
             display: 'block',
             animation: `emoji-bubble-pop 420ms ${220 + i * 90}ms cubic-bezier(0.34, 1.56, 0.64, 1) both`,
           }}

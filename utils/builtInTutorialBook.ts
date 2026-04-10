@@ -25,6 +25,17 @@ export const clearTutorialUnread = (): void => {
   try { localStorage.removeItem(TUTORIAL_UNREAD_KEY); } catch { /* no-op */ }
 };
 
+const TUTORIAL_DELETED_KEY = '__built_in_tutorial_deleted__';
+export const isTutorialDeleted = (): boolean => {
+  try { return localStorage.getItem(TUTORIAL_DELETED_KEY) === '1'; } catch { return false; }
+};
+export const markTutorialDeleted = (): void => {
+  try { localStorage.setItem(TUTORIAL_DELETED_KEY, '1'); } catch { /* no-op */ }
+};
+export const clearTutorialDeleted = (): void => {
+  try { localStorage.removeItem(TUTORIAL_DELETED_KEY); } catch { /* no-op */ }
+};
+
 export const isBuiltInBook = (bookId: string) => bookId === BUILT_IN_TUTORIAL_BOOK_ID;
 
 const text = (t: string): ReaderContentBlock => ({ type: 'text', text: t });

@@ -641,7 +641,7 @@ const Library: React.FC<LibraryProps> = ({
   // Open Edit
   const openEditModal = (e: React.MouseEvent, book: Book) => {
     e.stopPropagation();
-    if (isBuiltInBook(book.id)) return;
+    if (isBuiltInBook(book.id)) { setDeleteConfirmId(book.id); return; }
     clearSessionGeneratedImageRefs(true);
     if (editModalCloseTimerRef.current) {
       window.clearTimeout(editModalCloseTimerRef.current);
@@ -1845,14 +1845,12 @@ const Library: React.FC<LibraryProps> = ({
                        <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-bold text-white/90 backdrop-blur-sm" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}>在读</span>
                      )}
 
-                     {!isBuiltInBook(book.id) && (
                      <button
                         onClick={(e) => openEditModal(e, book)}
                         className="absolute top-2 right-2 w-7 h-7 bg-black/40 hover:bg-rose-500 text-white rounded-full flex items-center justify-center backdrop-blur-sm transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
                      >
-                        <Edit2 size={14} />
+                        {isBuiltInBook(book.id) ? <Trash2 size={14} /> : <Edit2 size={14} />}
                      </button>
-                     )}
                    </div>
                    <div className="pl-1">
                      <h3 className={`font-bold text-sm line-clamp-1 ${headingClass}`}>{book.title}</h3>
@@ -1931,16 +1929,14 @@ const Library: React.FC<LibraryProps> = ({
                     </div>
 
                     {/* Actions */}
-                    {!isBuiltInBook(book.id) && (
                     <div className="flex flex-col justify-center">
                         <button
                             onClick={(e) => openEditModal(e, book)}
                             className={compactEditButtonClass}
                          >
-                            <Edit2 size={14} />
+                            {isBuiltInBook(book.id) ? <Trash2 size={14} /> : <Edit2 size={14} />}
                          </button>
                     </div>
-                    )}
                  </div>
                ))}
            </div>
